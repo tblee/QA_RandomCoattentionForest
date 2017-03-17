@@ -1,0 +1,4 @@
+download/
+log/
+*.pyc
+.gitignore~
