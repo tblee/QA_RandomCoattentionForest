@@ -392,7 +392,7 @@ class QASystem(object):
             logging.info("Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
 
             if epoch > 1 and epoch % 10 == 9:
-                self.evaluate_answer(session, dataset, log = True)
+                self.evaluate_answer(session, val_dataset, log = True)
 
 
 
