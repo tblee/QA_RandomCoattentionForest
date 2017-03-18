@@ -38,6 +38,7 @@ tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embeddin
 tf.app.flags.DEFINE_integer("subsample", None, "For testing purpose, subsample a portion of data to feedinto model")
 tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context paragraph to this length.")
 tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
+tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
 
 
 FLAGS = tf.app.flags.FLAGS
@@ -112,6 +113,7 @@ def main(_):
 
     initial_config['c_max_length'] = FLAGS.context_max_length
     initial_config['q_max_length'] = FLAGS.question_max_length
+    initial_config['eval_freq'] = FLAGS.eval_freq
 
     config = Config(initial_config)
 
@@ -123,14 +125,14 @@ def main(_):
         data_dir = FLAGS.data_dir,
         c_max_length = c_max_length,
         q_max_length = q_max_length,
-        train_val = "train",
+        train_val = "val",
         sample_size = FLAGS.subsample)
 
     val_contexts, val_questions, val_context_ids, val_context_masks, val_question_ids, val_start_ids, val_end_ids, val_answers = prepare_data(
         data_dir = FLAGS.data_dir,
         c_max_length = c_max_length,
         q_max_length = q_max_length,
-        train_val = "val",
+        train_val = "train",
         sample_size = FLAGS.subsample)
 
     ## === pack data to feed into model ===

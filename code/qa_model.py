@@ -33,6 +33,7 @@ class Config(object):
         self.embed_path = initial_config["embed_path"]
         self.c_max_length = initial_config['c_max_length']
         self.q_max_length = initial_config['q_max_length']
+        self.eval_freq = initial_config['eval_freq']
 
 
 def get_optimizer(opt):
@@ -172,18 +173,26 @@ class QASystem(object):
 
         return outputs
 
-    def test(self, session, valid_x, valid_y):
+    def test(self, session, dataset):
         """
         in here you should compute a cost for your validation set
         and tune your hyperparameters according to the validation set performance
         :return:
         """
-        input_feed = {}
+        contexts = dataset['contexts']
+        questions = dataset['questions']
+        start_labels = dataset['start_labels']
+        end_labels = dataset['end_labels']
+        input_feed = self.create_feed_dict(
+            input_contexts = contexts,
+            input_questions = questions,
+            input_start_labels = start_labels,
+            input_end_labels = end_labels)
 
         # fill in this feed_dictionary like:
         # input_feed['valid_x'] = valid_x
 
-        output_feed = []
+        output_feed = self.loss
 
         outputs = session.run(output_feed, input_feed)
 
@@ -223,7 +232,7 @@ class QASystem(object):
 
         return (a_s, a_e)
 
-    def validate(self, sess, valid_dataset):
+    def validate(self, sess, val_dataset):
         """
         Iterate through the validation dataset and determine what
         the validation cost is.
@@ -235,11 +244,35 @@ class QASystem(object):
 
         :return:
         """
-        valid_cost = 0
 
-        for valid_x, valid_y in valid_dataset:
-          valid_cost = self.test(sess, valid_x, valid_y)
+        context_ids = val_dataset['contexts']
+        question_ids = val_dataset['questions']
+        start_labels = val_dataset['start_labels']
+        end_labels = val_dataset['end_labels']
 
+        ## create batches to calculate validation loss to prevent flooded the model
+        ## since we are not training parameters, take a larger batch size
+        batch_size = self.config.batch_size * 10
+        input_size = len(start_labels)
+        n_batches = int(input_size / batch_size) + 1
+        data_batches = []
+        for batch_id in xrange(n_batches):
+            id_h = batch_id * batch_size
+            id_t = (batch_id + 1) * batch_size
+            d = {}
+            d['contexts'] = context_ids[id_h : id_t]
+            d['questions'] = question_ids[id_h : id_t]
+            d['start_labels'] = start_labels[id_h : id_t]
+            d['end_labels'] = end_labels[id_h : id_t]
+            data_batches.append(d)
+
+        valid_cost = 0.
+
+        for data_batch in data_batches:
+            n_samples_in_batch = len(data_batch['start_labels'])
+            cost = self.test(sess, data_batch)
+            valid_cost += cost * n_samples_in_batch
+        valid_cost /= input_size
 
         return valid_cost
 
@@ -305,7 +338,7 @@ class QASystem(object):
         toc = time.time()
 
         if log:
-            logging.info("Evaluation took {} (sec) with F1: {}, EM: {}, for {} samples".format(toc - tic, f1, em, min(input_size, sample)))
+            logging.info("==== Evaluation took {} (sec) with F1: {}, EM: {}, for {} samples".format(toc - tic, f1, em, min(input_size, sample)))
 
         return f1, em
 
@@ -391,9 +424,16 @@ class QASystem(object):
                 loss += batch_loss * n_samples_in_batch
             loss /= input_size
             toc = time.time()
-            logging.info("Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
+            logging.info("== Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
 
-            if epoch > 1 and epoch % 5 == 4:
+            ## evaluate validation loss
+            tic = time.time()
+            valid_loss = self.validate(session, val_dataset)
+            toc = time.time()
+            logging.info("======== Validation took {} (sec) loss is: {}".format(toc - tic, valid_loss))
+
+            eval_freq = self.config.eval_freq
+            if epoch > 1 and epoch % eval_freq == (eval_freq - 1):
                 logging.info("==== Evaluating training set ====")
                 self.evaluate_answer(session, dataset, log = True)
                 logging.info("==== Evaluating validation set ====")
