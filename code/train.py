@@ -125,14 +125,14 @@ def main(_):
         data_dir = FLAGS.data_dir,
         c_max_length = c_max_length,
         q_max_length = q_max_length,
-        train_val = "val",
+        train_val = "train",
         sample_size = FLAGS.subsample)
 
     val_contexts, val_questions, val_context_ids, val_context_masks, val_question_ids, val_start_ids, val_end_ids, val_answers = prepare_data(
         data_dir = FLAGS.data_dir,
         c_max_length = c_max_length,
         q_max_length = q_max_length,
-        train_val = "train",
+        train_val = "val",
         sample_size = FLAGS.subsample)
 
     ## === pack data to feed into model ===
