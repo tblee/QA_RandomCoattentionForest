@@ -338,15 +338,7 @@ class QASystem(object):
         # even continue training
 
         ## ===== Both training and validation sets are passed into train function ====
-        ## process training set
-        train_dataset = {}
-        train_dataset['contexts'] = dataset['contexts']
-        train_dataset['questions'] = dataset['questions']
-        train_dataset['start_labels'] = dataset['start_labels']
-        train_dataset['end_labels'] = dataset['end_labels']
-        train_dataset['original_contexts'] = dataset['original_contexts']
-        train_dataset['answers'] = dataset['answers']
-
+        ## process dataset
         val_dataset = {}
         val_dataset['contexts'] = dataset['val_contexts']
         val_dataset['questions'] = dataset['val_questions']
@@ -355,7 +347,28 @@ class QASystem(object):
         val_dataset['original_contexts'] = dataset['val_original_contexts']
         val_dataset['answers'] = dataset['val_answers']
 
+        ## create training batch with one training dictionary per batch
+        context_ids = dataset['contexts']
+        question_ids = dataset['questions']
+        start_labels = dataset['start_labels']
+        end_labels = dataset['end_labels']
+        #train_dataset['original_contexts'] = dataset['original_contexts']
+        #train_dataset['answers'] = dataset['answers']
 
+        batch_size = self.config.batch_size
+        input_size = len(start_labels)
+        n_batches = int(input_size / batch_size) + 1
+        data_batches = []
+        for batch_id in xrange(n_batches):
+            id_h = batch_id * batch_size
+            id_t = (batch_id + 1) * batch_size
+            d = {}
+            d['contexts'] = context_ids[id_h : id_t]
+            d['questions'] = question_ids[id_h : id_t]
+            d['start_labels'] = start_labels[id_h : id_t]
+            d['end_labels'] = end_labels[id_h : id_t]
+            data_batches.append(d)
+        logging.info("Training with {} batches with batch size: {}".format(n_batches, batch_size))
 
         tic = time.time()
         params = tf.trainable_variables()
@@ -366,12 +379,20 @@ class QASystem(object):
         ## ==== training process ====
         for epoch in xrange(self.config.epochs):
             tic = time.time()
-            _, loss = self.optimize(session, train_dataset)
+            loss = 0.
+            ## randomize batch training order
+            batch_order = sorted(np.random.choice(range(n_batches), size = n_batches, replace = False))
+            for batch_id in batch_order:
+                data_batch = data_batches[batch_id]
+                n_samples_in_batch = len(data_batch['start_labels'])
+                _, batch_loss = self.optimize(session, data_batch)
+                loss += batch_loss * n_samples_in_batch
+            loss /= input_size
             toc = time.time()
             logging.info("Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
 
             if epoch > 1 and epoch % 10 == 9:
-                self.evaluate_answer(session, val_dataset, log = True)
+                self.evaluate_answer(session, dataset, log = True)
 
 
 
