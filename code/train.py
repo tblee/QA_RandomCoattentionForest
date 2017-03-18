@@ -142,6 +142,13 @@ def main(_):
     dataset['original_contexts'] = train_contexts
     dataset['answers'] = train_answers
 
+    dataset['val_contexts'] = np.asarray(val_context_ids)
+    dataset['val_questions'] = np.asarray(val_question_ids)
+    dataset['val_start_labels'] = np.asarray(val_start_ids)
+    dataset['val_end_labels'] = np.asarray(val_end_ids)
+    dataset['val_original_contexts'] = val_contexts
+    dataset['val_answers'] = train_answers
+
     encoder = BasicAffinityEncoder(config)
     decoder = BasicLSTMClassifyDecoder(config)
 

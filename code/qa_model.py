@@ -261,12 +261,36 @@ class QASystem(object):
         f1 = 0.
         em = 0.
 
+        ## === take sample ===
+        context_ids = dataset['contexts']
+        question_ids = dataset['questions']
         original_contexts = dataset['original_contexts']
         answers = dataset['answers']
 
+        input_size = len(answers)
+        s_context_ids, s_question_ids, s_contexts, s_answers = [], [], [], []
+        if input_size > sample:
+            sample_ids = sorted(np.random.choice(range(input_size), size = sample, replace = False))
+            for idx in sample_ids:
+                s_context_ids.append(context_ids[idx])
+                s_question_ids.append(question_ids[idx])
+                s_contexts.append(original_contexts[idx])
+                s_answers.append(answers[idx])
+
+            original_contexts = s_contexts
+            answers = s_answers
+        else:
+            s_context_ids = context_ids
+            s_question_ids = question_ids
+
+        sampled_dataset = {}
+        sampled_dataset['contexts'] = s_context_ids
+        sampled_dataset['questions'] = s_question_ids
+
+
         ## === get starting and ending positions ===
         tic = time.time()
-        a_s, a_e = self.answer(session, dataset)
+        a_s, a_e = self.answer(session, sampled_dataset)
         for start, end, context, ans in zip(a_s, a_e, original_contexts, answers):
             pred_ans = context[start: end + 1]
             pred_ans = " ".join(pred_ans)
@@ -279,7 +303,7 @@ class QASystem(object):
         toc = time.time()
 
         if log:
-            logging.info("Evaluation took {} (sec) with F1: {}, EM: {}, for {} samples".format(toc - tic, f1, em, sample))
+            logging.info("Evaluation took {} (sec) with F1: {}, EM: {}, for {} samples".format(toc - tic, f1, em, min(input_size, sample)))
 
         return f1, em
 
@@ -313,6 +337,26 @@ class QASystem(object):
         # so that you can use your trained model to make predictions, or
         # even continue training
 
+        ## ===== Both training and validation sets are passed into train function ====
+        ## process training set
+        train_dataset = {}
+        train_dataset['contexts'] = dataset['contexts']
+        train_dataset['questions'] = dataset['questions']
+        train_dataset['start_labels'] = dataset['start_labels']
+        train_dataset['end_labels'] = dataset['end_labels']
+        train_dataset['original_contexts'] = dataset['original_contexts']
+        train_dataset['answers'] = dataset['answers']
+
+        val_dataset = {}
+        val_dataset['contexts'] = dataset['val_contexts']
+        val_dataset['questions'] = dataset['val_questions']
+        val_dataset['start_labels'] = dataset['val_start_labels']
+        val_dataset['end_labels'] = dataset['val_end_labels']
+        val_dataset['original_contexts'] = dataset['val_original_contexts']
+        val_dataset['answers'] = dataset['val_answers']
+
+
+
         tic = time.time()
         params = tf.trainable_variables()
         num_params = sum(map(lambda t: np.prod(tf.shape(t.value()).eval()), params))
@@ -322,12 +366,12 @@ class QASystem(object):
         ## ==== training process ====
         for epoch in xrange(self.config.epochs):
             tic = time.time()
-            _, loss = self.optimize(session, dataset)
+            _, loss = self.optimize(session, train_dataset)
             toc = time.time()
             logging.info("Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
 
-            if epoch > 1 and epoch % 10 == 1:
-                self.evaluate_answer(session, dataset, log = True)
+            if epoch > 1 and epoch % 10 == 9:
+                self.evaluate_answer(session, val_dataset, log = True)
 
 
 
