@@ -147,7 +147,7 @@ def main(_):
     dataset['val_start_labels'] = np.asarray(val_start_ids)
     dataset['val_end_labels'] = np.asarray(val_end_ids)
     dataset['val_original_contexts'] = val_contexts
-    dataset['val_answers'] = train_answers
+    dataset['val_answers'] = val_answers
 
     encoder = BasicAffinityEncoder(config)
     decoder = BasicLSTMClassifyDecoder(config)
