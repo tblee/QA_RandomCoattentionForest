@@ -11,8 +11,28 @@ import tensorflow as tf
 from tensorflow.python.ops import variable_scope as vs
 
 from evaluate import exact_match_score, f1_score
+from qa_utils import load_glove
 
 logging.basicConfig(level=logging.INFO)
+
+
+class Config(object):
+    def __init__(self, initial_config):
+        self.learning_rate = initial_config['learning_rate']
+        self.max_gradient_norm = initial_config['max_gradient_norm']
+        self.dropout = initial_config['dropout']
+        self.batch_size = initial_config['batch_size']
+        self.epochs = initial_config['epochs']
+        self.state_size = initial_config['state_size']
+        self.output_size = initial_config['output_size']
+        self.embedding_size = initial_config['embedding_size']
+        self.data_dir = initial_config['data_dir']
+        self.optimizer = initial_config['optimizer']
+        self.print_every = initial_config['print_every']
+        self.keep = initial_config["keep"]
+        self.embed_path = initial_config["embed_path"]
+        self.c_max_length = initial_config['c_max_length']
+        self.q_max_length = initial_config['q_max_length']
 
 
 def get_optimizer(opt):
@@ -25,51 +45,8 @@ def get_optimizer(opt):
     return optfn
 
 
-class Encoder(object):
-    def __init__(self, size, vocab_dim):
-        self.size = size
-        self.vocab_dim = vocab_dim
-
-    def encode(self, inputs, masks, encoder_state_input):
-        """
-        In a generalized encode function, you pass in your inputs,
-        masks, and an initial
-        hidden state input into this function.
-
-        :param inputs: Symbolic representations of your input
-        :param masks: this is to make sure tf.nn.dynamic_rnn doesn't iterate
-                      through masked steps
-        :param encoder_state_input: (Optional) pass this as initial hidden state
-                                    to tf.nn.dynamic_rnn to build conditional representations
-        :return: an encoded representation of your input.
-                 It can be context-level representation, word-level representation,
-                 or both.
-        """
-
-        return
-
-
-class Decoder(object):
-    def __init__(self, output_size):
-        self.output_size = output_size
-
-    def decode(self, knowledge_rep):
-        """
-        takes in a knowledge representation
-        and output a probability estimation over
-        all paragraph tokens on which token should be
-        the start of the answer span, and which should be
-        the end of the answer span.
-
-        :param knowledge_rep: it is a representation of the paragraph and question,
-                              decided by how you choose to implement the encoder
-        :return:
-        """
-
-        return
-
 class QASystem(object):
-    def __init__(self, encoder, decoder, *args):
+    def __init__(self, encoder, decoder, config, *args):
         """
         Initializes your System
 
@@ -77,8 +54,28 @@ class QASystem(object):
         :param decoder: a decoder that you constructed in train.py
         :param args: pass in more arguments as needed
         """
+        # ==== set up basic stuff ====
+        self.config = config
+        self.glove = load_glove(
+            self.config.data_dir,
+            self.config.embedding_size)
+
+        self.encoder = encoder
+        self.decoder = decoder
 
         # ==== set up placeholder tokens ========
+        self.context_placeholder = tf.placeholder(tf.int32,
+            shape = [None, self.config.c_max_length],
+            name = "context")
+        self.question_placeholder = tf.placeholder(tf.int32,
+            shape = [None, self.config.q_max_length],
+            name = "question")
+        self.start_label_placeholder = tf.placeholder(tf.int32,
+            shape = [None],
+            name = "start_label")
+        self.end_label_placeholder = tf.placeholder(tf.int32,
+            shape = [None],
+            name = "end_label")
 
 
         # ==== assemble pieces ====
@@ -88,7 +85,21 @@ class QASystem(object):
             self.setup_loss()
 
         # ==== set up training/updating procedure ====
-        pass
+        self.setup_embeddings()
+        self.setup_system()
+        self.setup_loss()
+        self.setup_optimization()
+
+
+    def create_feed_dict(self, input_contexts, input_questions, input_start_labels = None, input_end_labels = None):
+        feed_dict = {}
+        feed_dict[self.context_placeholder] = input_contexts
+        feed_dict[self.question_placeholder] = input_questions
+        if input_start_labels is not None:
+            feed_dict[self.start_label_placeholder] = input_start_labels
+        if input_end_labels is not None:
+            feed_dict[self.end_label_placeholder] = input_end_labels
+        return feed_dict
 
 
     def setup_system(self):
@@ -98,7 +109,12 @@ class QASystem(object):
         to assemble your reading comprehension system!
         :return:
         """
-        raise NotImplementedError("Connect all parts of your system here!")
+        #raise NotImplementedError("Connect all parts of your system here!")
+        dataset_encoder = {}
+        dataset_encoder['contexts'] = self.context_embeddings
+        dataset_encoder['questions'] = self.question_embeddings
+        self.encoded = self.encoder.encode(dataset_encoder)
+        self.start_preds, self.end_preds = self.decoder.decode(self.encoded)
 
 
     def setup_loss(self):
@@ -106,8 +122,17 @@ class QASystem(object):
         Set up your loss computation here
         :return:
         """
-        with vs.variable_scope("loss"):
-            pass
+        with vs.variable_scope("loss_start"):
+            loss_s = tf.reduce_mean(
+                tf.nn.sparse_softmax_cross_entropy_with_logits(self.start_preds, self.start_label_placeholder))
+        with vs.variable_scope("loss_end"):
+            loss_e = tf.reduce_mean(
+                tf.nn.sparse_softmax_cross_entropy_with_logits(self.end_preds, self.end_label_placeholder))
+        self.loss = loss_s + loss_e
+
+    def setup_optimization(self):
+        with vs.variable_scope("optimization"):
+            self.opt = get_optimizer(self.config.optimizer)(self.config.learning_rate).minimize(self.loss) 
 
     def setup_embeddings(self):
         """
@@ -115,20 +140,33 @@ class QASystem(object):
         :return:
         """
         with vs.variable_scope("embeddings"):
-            pass
+            ## we don't train word embeddings
+            self.glove_dictionary = tf.constant(self.glove, dtype = tf.float32)
+            self.context_embeddings = tf.nn.embedding_lookup(
+                self.glove_dictionary, self.context_placeholder)
+            self.question_embeddings = tf.nn.embedding_lookup(
+                self.glove_dictionary, self.question_placeholder)
 
-    def optimize(self, session, train_x, train_y):
+    def optimize(self, session, dataset):
         """
         Takes in actual data to optimize your model
         This method is equivalent to a step() function
         :return:
         """
-        input_feed = {}
+        contexts = dataset['contexts']
+        questions = dataset['questions']
+        start_labels = dataset['start_labels']
+        end_labels = dataset['end_labels']
+        input_feed = self.create_feed_dict(
+            input_contexts = contexts,
+            input_questions = questions,
+            input_start_labels = start_labels,
+            input_end_labels = end_labels)
 
         # fill in this feed_dictionary like:
         # input_feed['train_x'] = train_x
 
-        output_feed = []
+        output_feed = [self.opt, self.loss]
 
         outputs = session.run(output_feed, input_feed)
 
@@ -256,3 +294,14 @@ class QASystem(object):
         num_params = sum(map(lambda t: np.prod(tf.shape(t.value()).eval()), params))
         toc = time.time()
         logging.info("Number of params: %d (retreival took %f secs)" % (num_params, toc - tic))
+
+        ## ==== training process ====
+        for epoch in xrange(self.config.epochs):
+            tic = time.time()
+            _, loss = self.optimize(session, dataset)
+            toc = time.time()
+            logging.info("Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
+
+
+
+

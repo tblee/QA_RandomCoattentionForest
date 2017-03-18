@@ -6,8 +6,11 @@ import os
 import json
 
 import tensorflow as tf
+import numpy as np
 
-from qa_model import Encoder, QASystem, Decoder
+from qa_model import QASystem, Config
+from qa_encoder_decoder import BasicAffinityEncoder, BasicLSTMClassifyDecoder
+from qa_utils import prepare_data
 from os.path import join as pjoin
 
 import logging
@@ -31,6 +34,11 @@ tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per pri
 tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
+
+tf.app.flags.DEFINE_integer("subsample", None, "For testing purpose, subsample a portion of data to feedinto model")
+tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context paragraph to this length.")
+tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
+
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -81,14 +89,65 @@ def main(_):
     # Do what you need to load datasets from FLAGS.data_dir
     dataset = None
 
-    embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
+    embed_path = FLAGS.embed_path or pjoin("data", "squad")
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
     vocab, rev_vocab = initialize_vocab(vocab_path)
 
-    encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size)
-    decoder = Decoder(output_size=FLAGS.output_size)
+    ## collect input arguments to construct config object
+    initial_config = {}
+    initial_config['learning_rate'] = FLAGS.learning_rate
+    initial_config['max_gradient_norm'] = FLAGS.max_gradient_norm
+    initial_config['dropout'] = FLAGS.dropout
+    initial_config['batch_size'] = FLAGS.batch_size
+    initial_config['epochs'] = FLAGS.epochs
+    initial_config['state_size'] = FLAGS.state_size
+    initial_config['output_size'] = FLAGS.output_size
+    initial_config['embedding_size'] = FLAGS.embedding_size
+    initial_config['data_dir'] = FLAGS.data_dir
 
-    qa = QASystem(encoder, decoder)
+    initial_config['optimizer'] = FLAGS.optimizer
+    initial_config['print_every'] = FLAGS.print_every
+    initial_config["keep"] = FLAGS.keep
+    initial_config["embed_path"] = FLAGS.embed_path
+
+    initial_config['c_max_length'] = FLAGS.context_max_length
+    initial_config['q_max_length'] = FLAGS.question_max_length
+
+    config = Config(initial_config)
+
+    ## load training and validation data
+    c_max_length = FLAGS.context_max_length
+    q_max_length = FLAGS.question_max_length
+
+    train_contexts, train_questions, train_context_ids, train_context_masks, train_question_ids, train_start_ids, train_end_ids, train_answers = prepare_data(
+        data_dir = FLAGS.data_dir,
+        c_max_length = c_max_length,
+        q_max_length = q_max_length,
+        train_val = "train",
+        sample_size = FLAGS.subsample)
+
+    val_contexts, val_questions, val_context_ids, val_context_masks, val_question_ids, val_start_ids, val_end_ids, val_answers = prepare_data(
+        data_dir = FLAGS.data_dir,
+        c_max_length = c_max_length,
+        q_max_length = q_max_length,
+        train_val = "val",
+        sample_size = FLAGS.subsample)
+
+    ## === pack data to feed into model ===
+    dataset = {}
+    dataset['contexts'] = np.asarray(train_context_ids)
+    dataset['questions'] = np.asarray(train_question_ids)
+    dataset['start_labels'] = np.asarray(train_start_ids)
+    dataset['end_labels'] = np.asarray(train_end_ids)
+
+
+    encoder = BasicAffinityEncoder(config)
+    decoder = BasicLSTMClassifyDecoder(config)
+
+    #encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size)
+    #decoder = Decoder(output_size=FLAGS.output_size)
+
+    qa = QASystem(encoder, decoder, config)
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
@@ -106,7 +165,8 @@ def main(_):
         save_train_dir = get_normalized_train_dir(FLAGS.train_dir)
         qa.train(sess, dataset, save_train_dir)
 
-        qa.evaluate_answer(sess, dataset, vocab, FLAGS.evaluate, log=True)
+        #qa.evaluate_answer(sess, dataset, vocab, FLAGS.evaluate, log=True)
+    
 
 if __name__ == "__main__":
     tf.app.run()
