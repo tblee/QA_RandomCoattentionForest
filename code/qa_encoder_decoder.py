@@ -70,6 +70,7 @@ class BasicAffinityEncoder(Encoder):
 
 			context_input = dataset['contexts']
 			question_input = dataset['questions']
+			dropout = dataset['dropout']
 
 			## compute basic context and question representation
 			with vs.variable_scope("contextLSTM"):
@@ -101,7 +102,7 @@ class BasicAffinityEncoder(Encoder):
 				context_attn = tf.matmul(context_attn_concat, W) + b
 				context_attn = tf.reshape(context_attn, [-1, c_max_length, hidden_size])
 
-			return context_attn
+			return tf.nn.dropout(context_attn, 1.0 - dropout)
 
 class BasicLSTMClassifyDecoder(Decoder):
 	def __init__(self, config):

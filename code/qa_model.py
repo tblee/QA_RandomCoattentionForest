@@ -77,6 +77,9 @@ class QASystem(object):
         self.end_label_placeholder = tf.placeholder(tf.int32,
             shape = [None],
             name = "end_label")
+        self.dropout_placeholder = tf.placeholder(tf.float32,
+            shape = [],
+            name = "dropout")
 
 
         # ==== assemble pieces ====
@@ -92,14 +95,22 @@ class QASystem(object):
         self.setup_optimization()
 
 
-    def create_feed_dict(self, input_contexts, input_questions, input_start_labels = None, input_end_labels = None):
+    def create_feed_dict(self, input_contexts, input_questions,
+        input_start_labels = None, input_end_labels = None, input_dropout = None):
         feed_dict = {}
         feed_dict[self.context_placeholder] = input_contexts
         feed_dict[self.question_placeholder] = input_questions
+
         if input_start_labels is not None:
             feed_dict[self.start_label_placeholder] = input_start_labels
+        
         if input_end_labels is not None:
             feed_dict[self.end_label_placeholder] = input_end_labels
+
+        if input_dropout is not None:
+            feed_dict[self.dropout_placeholder] = input_dropout
+        else:
+            feed_dict[self.dropout_placeholder] = 0.0
         return feed_dict
 
 
@@ -114,6 +125,7 @@ class QASystem(object):
         dataset_encoder = {}
         dataset_encoder['contexts'] = self.context_embeddings
         dataset_encoder['questions'] = self.question_embeddings
+        dataset_encoder['dropout'] = self.dropout_placeholder
         self.encoded = self.encoder.encode(dataset_encoder)
         self.start_preds, self.end_preds = self.decoder.decode(self.encoded)
 
@@ -162,7 +174,8 @@ class QASystem(object):
             input_contexts = contexts,
             input_questions = questions,
             input_start_labels = start_labels,
-            input_end_labels = end_labels)
+            input_end_labels = end_labels,
+            input_dropout = self.config.dropout)
 
         # fill in this feed_dictionary like:
         # input_feed['train_x'] = train_x
