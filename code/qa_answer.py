@@ -14,7 +14,9 @@ import numpy as np
 from six.moves import xrange
 import tensorflow as tf
 
-from qa_model import Encoder, QASystem, Decoder
+from qa_model import Config, QASystem
+from qa_encoder_decoder import BasicAffinityEncoder, BasicLSTMClassifyDecoder
+from qa_utils import pad_and_trim_sentence_with_mask
 from preprocessing.squad_preprocess import data_from_json, maybe_download, squad_base_url, \
     invert_map, tokenize, token_idx_map
 import qa_data
@@ -25,19 +27,29 @@ logging.basicConfig(level=logging.INFO)
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
+tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
+tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
-tf.app.flags.DEFINE_integer("batch_size", 10, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 0, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
 tf.app.flags.DEFINE_integer("output_size", 750, "The output size of your model.")
+tf.app.flags.DEFINE_string("optimizer", "adam", "adam / sgd")
+tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per print.")
 tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("train_dir", "train", "Training directory (default: ./train).")
 tf.app.flags.DEFINE_string("log_dir", "log", "Path to store log and flag files (default: ./log)")
+tf.app.flags.DEFINE_string("data_dir", "data/squad", "SQuAD directory (default ./data/squad)")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
 tf.app.flags.DEFINE_string("dev_path", "data/squad/dev-v1.1.json", "Path to the JSON dev set to evaluate against (default: ./data/squad/dev-v1.1.json)")
+
+tf.app.flags.DEFINE_integer("subsample", None, "For testing purpose, subsample a portion of data to feedinto model")
+tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context paragraph to this length.")
+tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
+tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
+
 
 def initialize_model(session, model, train_dir):
     ckpt = tf.train.get_checkpoint_state(train_dir)
@@ -110,7 +122,7 @@ def prepare_dev(prefix, dev_filename, vocab):
     return context_data, question_data, question_uuid_data
 
 
-def generate_answers(sess, model, dataset, rev_vocab):
+def generate_answers(sess, model, input_dataset, rev_vocab):
     """
     Loop over the dev or test dataset and generate answer.
 
@@ -129,7 +141,39 @@ def generate_answers(sess, model, dataset, rev_vocab):
     :param rev_vocab: this is a list of vocabulary that maps index to actual words
     :return:
     """
+    ## === process input data ===
+    context_data = input_dataset['contexts']
+    question_data = input_dataset['questions']
+    uuids = input_dataset['uuids']
+
+    context_data = map(lambda s: map( int, s.strip('\n').split(' ')), context_data)
+    question_data = map(lambda s: map( int, s.strip('\n').split(' ')), question_data)
+
+    context_data = map(lambda s: pad_and_trim_sentence_with_mask(s, FLAGS.context_max_length)[0], context_data)
+    question_data = map(lambda s: pad_and_trim_sentence_with_mask(s, FLAGS.question_max_length)[0], question_data)
+
+    dataset = {}
+    dataset['contexts'] = np.asarray(context_data)
+    dataset['questions'] = np.asarray(question_data)
+
+    ## === obtain predicted answers from model ===
+    rev_dict = {}
+    for idx, word in enumerate(rev_vocab):
+        rev_dict[idx] = word
+
+    a_s, a_e = model.answer(sess, dataset)
+
     answers = {}
+    for start, end, context, uuid in zip(a_s, a_e, context_data, uuids):
+        ans = context[start : end + 1]
+        ## eliminate padded words
+        cur = len(ans) - 1
+        while cur >= 0 and ans[cur] == qa_data.PAD_ID:
+            cur -= 1
+        ans = ans[:cur + 1]
+        ans = map(lambda idx: rev_dict.get(idx, qa_data._UNK), ans)
+        ans = " ".join(ans)
+        answers[uuid] = ans
 
     return answers
 
@@ -171,15 +215,43 @@ def main(_):
     dev_dirname = os.path.dirname(os.path.abspath(FLAGS.dev_path))
     dev_filename = os.path.basename(FLAGS.dev_path)
     context_data, question_data, question_uuid_data = prepare_dev(dev_dirname, dev_filename, vocab)
-    dataset = (context_data, question_data, question_uuid_data)
+    
+    dataset = {}
+    dataset['contexts'] = context_data
+    dataset['questions'] = question_data
+    dataset['uuids'] = question_uuid_data
+    #dataset = (context_data, question_data, question_uuid_data)
 
     # ========= Model-specific =========
     # You must change the following code to adjust to your model
 
-    encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size)
-    decoder = Decoder(output_size=FLAGS.output_size)
+    ## collect input arguments to construct config object
+    initial_config = {}
+    initial_config['learning_rate'] = FLAGS.learning_rate
+    initial_config['max_gradient_norm'] = FLAGS.max_gradient_norm
+    initial_config['dropout'] = FLAGS.dropout
+    initial_config['batch_size'] = FLAGS.batch_size
+    initial_config['epochs'] = FLAGS.epochs
+    initial_config['state_size'] = FLAGS.state_size
+    initial_config['output_size'] = FLAGS.output_size
+    initial_config['embedding_size'] = FLAGS.embedding_size
+    initial_config['data_dir'] = FLAGS.data_dir
 
-    qa = QASystem(encoder, decoder)
+    initial_config['optimizer'] = FLAGS.optimizer
+    initial_config['print_every'] = FLAGS.print_every
+    initial_config["keep"] = FLAGS.keep
+    initial_config["embed_path"] = FLAGS.embed_path
+
+    initial_config['c_max_length'] = FLAGS.context_max_length
+    initial_config['q_max_length'] = FLAGS.question_max_length
+    initial_config['eval_freq'] = FLAGS.eval_freq
+
+    config = Config(initial_config)
+
+    encoder = BasicAffinityEncoder(config)
+    decoder = BasicLSTMClassifyDecoder(config)
+
+    qa = QASystem(encoder, decoder, config)
 
     with tf.Session() as sess:
         train_dir = get_normalized_train_dir(FLAGS.train_dir)

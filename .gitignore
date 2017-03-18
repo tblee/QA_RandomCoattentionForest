@@ -1,5 +1,6 @@
 download/
 log/
 train/
+dev-prediction.json
 *.pyc
 .gitignore~
