@@ -189,29 +189,37 @@ class QASystem(object):
 
         return outputs
 
-    def decode(self, session, test_x):
+    def decode(self, session, dataset):
         """
         Returns the probability distribution over different positions in the paragraph
         so that other methods like self.answer() will be able to work properly
         :return:
         """
-        input_feed = {}
+        contexts = dataset['contexts']
+        questions = dataset['questions']
+        input_feed = self.create_feed_dict(
+            input_contexts = contexts,
+            input_questions = questions)
 
         # fill in this feed_dictionary like:
         # input_feed['test_x'] = test_x
 
-        output_feed = []
+        output_feed = [self.start_preds, self.end_preds]
 
         outputs = session.run(output_feed, input_feed)
 
         return outputs
 
-    def answer(self, session, test_x):
+    def answer(self, session, dataset):
+        """
+        :return:
+        a_s: starting positions, with shape = [batch_size]
+        a_e: ending positions, with shape = [batch_size]
+        """
+        start_preds, end_preds = self.decode(session, dataset)
 
-        yp, yp2 = self.decode(session, test_x)
-
-        a_s = np.argmax(yp, axis=1)
-        a_e = np.argmax(yp2, axis=1)
+        a_s = np.argmax(start_preds, axis=1)
+        a_e = np.argmax(end_preds, axis=1)
 
         return (a_s, a_e)
 
@@ -250,12 +258,28 @@ class QASystem(object):
         :param log: whether we print to std out stream
         :return:
         """
-
         f1 = 0.
         em = 0.
 
+        original_contexts = dataset['original_contexts']
+        answers = dataset['answers']
+
+        ## === get starting and ending positions ===
+        tic = time.time()
+        a_s, a_e = self.answer(session, dataset)
+        for start, end, context, ans in zip(a_s, a_e, original_contexts, answers):
+            pred_ans = context[start: end + 1]
+            pred_ans = " ".join(pred_ans)
+            true_ans = " ".join(ans)
+            f1 += f1_score(pred_ans, true_ans)
+            em += exact_match_score(pred_ans, true_ans)
+
+        f1 = f1 / len(answers)
+        em = em / len(answers)
+        toc = time.time()
+
         if log:
-            logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
+            logging.info("Evaluation took {} (sec) with F1: {}, EM: {}, for {} samples".format(toc - tic, f1, em, sample))
 
         return f1, em
 
@@ -302,6 +326,8 @@ class QASystem(object):
             toc = time.time()
             logging.info("Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
 
+            if epoch > 1 and epoch % 10 == 1:
+                self.evaluate_answer(session, dataset, log = True)
 
 
 
