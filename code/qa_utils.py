@@ -13,6 +13,7 @@ def load_glove(data_dir, glove_dim = 100):
 
 	return glove.astype(np.float32)
 
+
 def prepare_data(data_dir, c_max_length, q_max_length, train_val = "train", sample_size = None):
 	
 	## obtain directories

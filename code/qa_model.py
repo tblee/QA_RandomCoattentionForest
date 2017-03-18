@@ -267,6 +267,8 @@ class QASystem(object):
         original_contexts = dataset['original_contexts']
         answers = dataset['answers']
 
+        assert len(context_ids) == len(question_ids) == len(original_contexts) == len(answers)
+
         input_size = len(answers)
         s_context_ids, s_question_ids, s_contexts, s_answers = [], [], [], []
         if input_size > sample:
@@ -391,7 +393,10 @@ class QASystem(object):
             toc = time.time()
             logging.info("Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
 
-            if epoch > 1 and epoch % 10 == 9:
+            if epoch > 1 and epoch % 5 == 4:
+                logging.info("==== Evaluating training set ====")
+                self.evaluate_answer(session, dataset, log = True)
+                logging.info("==== Evaluating validation set ====")
                 self.evaluate_answer(session, val_dataset, log = True)
 
 
