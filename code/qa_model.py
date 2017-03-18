@@ -12,6 +12,7 @@ from tensorflow.python.ops import variable_scope as vs
 
 from evaluate import exact_match_score, f1_score
 from qa_utils import load_glove
+from os.path import join as pjoin
 
 logging.basicConfig(level=logging.INFO)
 
@@ -93,6 +94,8 @@ class QASystem(object):
         self.setup_system()
         self.setup_loss()
         self.setup_optimization()
+
+        self.saver = tf.train.Saver()
 
 
     def create_feed_dict(self, input_contexts, input_questions,
@@ -451,6 +454,9 @@ class QASystem(object):
                 self.evaluate_answer(session, dataset, log = True)
                 logging.info("==== Evaluating validation set ====")
                 self.evaluate_answer(session, val_dataset, log = True)
+
+                save_path = self.saver.save(session, pjoin(train_dir, "model.ckpt"))
+                logging.info("** Saved parameters to {}".format(save_path))
 
 
 

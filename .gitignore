@@ -1,4 +1,5 @@
 download/
 log/
+train/
 *.pyc
 .gitignore~
