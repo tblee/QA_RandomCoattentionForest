@@ -35,6 +35,7 @@ class Config(object):
         self.c_max_length = initial_config['c_max_length']
         self.q_max_length = initial_config['q_max_length']
         self.eval_freq = initial_config['eval_freq']
+        self.decay_steps = initial_config['decay_steps']
 
 
 def get_optimizer(opt):
@@ -148,17 +149,24 @@ class QASystem(object):
 
     def setup_optimization(self):
         with vs.variable_scope("optimization"):
-            optimizer = get_optimizer(self.config.optimizer)(self.config.learning_rate)
-            self.gradients = optimizer.compute_gradients(self.loss)
+
+            self.global_step = tf.Variable(0, trainable = False)
+            self.learning_rate = tf.train.exponential_decay(
+                self.config.learning_rate, self.global_step, self.config.decay_steps, 0.9)
+
+            self.optimizer = get_optimizer(self.config.optimizer)(self.learning_rate)
+            self.opt = self.optimizer.minimize(self.loss, global_step = self.global_step)
+            
             """
+            self.gradients = optimizer.compute_gradients(self.loss)
             self.output_gradients = []
             for grad, name in self.gradients:
                 if grad is None:
                     self.output_gradients.append((tf.constant(0.0), name))
                 else:
                     self.output_gradients.append((grad, name))
-            """
             self.opt = optimizer.apply_gradients(self.gradients)
+            """
 
     def setup_embeddings(self):
         """
@@ -193,7 +201,7 @@ class QASystem(object):
         # fill in this feed_dictionary like:
         # input_feed['train_x'] = train_x
 
-        output_feed = [self.opt, self.loss]
+        output_feed = [self.opt, self.loss, self.learning_rate]
 
         outputs = session.run(output_feed, input_feed)
 
@@ -446,17 +454,14 @@ class QASystem(object):
             for batch_id in batch_order:
                 data_batch = data_batches[batch_id]
                 n_samples_in_batch = len(data_batch['start_labels'])
-                _, batch_loss = self.optimize(session, data_batch)
+                _, batch_loss, lr = self.optimize(session, data_batch)
                 loss += batch_loss * n_samples_in_batch
             loss /= input_size
-            toc = time.time()
-            logging.info("== Epoch {} took {} (sec) with loss: {}".format(epoch + 1, toc - tic, loss))
-
+            
             ## evaluate validation loss
-            tic = time.time()
             valid_loss = self.validate(session, val_dataset)
             toc = time.time()
-            logging.info("======== Validation took {} (sec) loss is: {}".format(toc - tic, valid_loss))
+            logging.info("====================== Epoch {} took {} (sec) with training loss: {}, validation loss: {}, exit learning_rate: {}".format(epoch + 1, toc - tic, loss, valid_loss, lr))
 
             eval_freq = self.config.eval_freq
             if epoch % eval_freq == (eval_freq - 1):

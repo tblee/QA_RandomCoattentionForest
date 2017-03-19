@@ -117,24 +117,6 @@ class BasicAffinityEncoder(Encoder):
 				out_lstm = tf.nn.rnn_cell.LSTMCell(hidden_size)
 				context_attn, _ = tf.nn.dynamic_rnn(out_lstm, context_question, dtype = tf.float32, time_major = False)
 
-			"""
-			context_attn_concat = tf.concat(1, [C_P, context])
-			context_attn_concat = tf.reshape(context_attn_concat, [-1, hidden_size * 2])
-
-			with vs.variable_scope("interactions"):
-				W = tf.get_variable("W_encoder_interaction",
-					dtype = tf.float32,
-					shape = [hidden_size * 2, hidden_size],
-					initializer = tf.contrib.layers.xavier_initializer())
-				b = tf.get_variable("b_encoder_interaction",
-					dtype = tf.float32,
-					shape = hidden_size,
-					initializer = tf.constant_initializer(0.0))
-
-				context_attn = tf.matmul(context_attn_concat, W) + b
-				context_attn = tf.reshape(context_attn, [-1, c_max_length, hidden_size])
-			"""
-
 			return tf.nn.dropout(context_attn, 1.0 - dropout)
 			#return context_attn
 
@@ -161,12 +143,28 @@ class BasicLSTMClassifyDecoder(Decoder):
 			start_preds = tf.matmul(encoded, W_start)
 			start_preds = tf.reshape(start_preds, [-1, c_max_length])
 
+			W_s_mem = tf.get_variable("W_start_mem",
+				dtype = tf.float32,
+				shape = [c_max_length, hidden_size],
+				initializer = tf.contrib.layers.xavier_initializer())
+			W_s_out = tf.get_variable("W_start_out",
+				dtype = tf.float32,
+				shape = [c_max_length, hidden_size],
+				initializer = tf.contrib.layers.xavier_initializer())
+
+			start_state_mem = tf.matmul(start_preds, W_s_mem)
+			start_state_out = tf.matmul(start_preds, W_s_out)
+
+			start_state = tf.nn.rnn_cell.LSTMStateTuple(start_state_mem, start_state_out)
+
 		encoded = tf.reshape(encoded, [-1, c_max_length, hidden_size])
 
 		with vs.variable_scope("endDecoder"):
 			with vs.variable_scope("endDecoderLSTM"):
 				c_lstm = tf.nn.rnn_cell.LSTMCell(hidden_size)
-				encoded_e, _ = tf.nn.dynamic_rnn(c_lstm, encoded, dtype = tf.float32, time_major = False)
+				encoded_e, _ = tf.nn.dynamic_rnn(c_lstm, encoded,
+					initial_state = start_state,
+					dtype = tf.float32, time_major = False)
 
 			W_end = tf.get_variable("W_end_decoder",
 				dtype = tf.float32,
