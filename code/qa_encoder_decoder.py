@@ -63,8 +63,10 @@ class BasicAffinityEncoder(Encoder):
 		
 		hidden_size = self.config.state_size
 		c_max_length = self.config.c_max_length
+		q_max_length = self.config.q_max_length
 		#hidden_size = 128
 		#c_max_length = 200
+		#q_max_length = 30
 
 		with vs.variable_scope("BasicAffinityEncoder"):
 
@@ -81,15 +83,41 @@ class BasicAffinityEncoder(Encoder):
 				q_lstm = tf.nn.rnn_cell.LSTMCell(hidden_size)
 				question, _ = tf.nn.dynamic_rnn(q_lstm, question_input, dtype = tf.float32, time_major = False)
 
+				## transform question representation to allow for non-linearity
+				W_q = tf.get_variable("W_question_nonlinearity",
+					dtype = tf.float32,
+					shape = [hidden_size, hidden_size],
+					initializer = tf.contrib.layers.xavier_initializer())
+				b_q = tf.get_variable("b_question_nonlinearity",
+					dtype = tf.float32,
+					shape = hidden_size,
+					initializer = tf.constant_initializer(0.0))
+
+				question = tf.reshape(question, [-1, hidden_size])
+				question = tf.tanh( tf.matmul(question, W_q) + b_q )
+				question = tf.reshape(question, [-1, q_max_length, hidden_size])
+
+
 			## dropout
 			context = tf.nn.dropout(context, 1.0 - dropout)
 			question = tf.nn.dropout(question, 1.0 - dropout)
 
 			## capture context and question interaction
 			Z = batch_matmul(context, tf.transpose(question, [0, 2, 1]))
-			A = tf.nn.softmax(Z, dim = -1)
-			C_P = batch_matmul(A, question)
+			A_Q = tf.nn.softmax(Z, dim = -1)
+			A_P = tf.nn.softmax(Z, dim = 1)
 
+
+			C_Q = batch_matmul(tf.transpose(A_Q, [0, 2, 1]), context)
+			C_P = batch_matmul(A_P, tf.concat(2, [question, C_Q]))
+
+			context_question = tf.concat(2, [context, C_P])
+
+			with vs.variable_scope("encoderLSTMoutput"):
+				out_lstm = tf.nn.rnn_cell.LSTMCell(hidden_size)
+				context_attn, _ = tf.nn.dynamic_rnn(out_lstm, context_question, dtype = tf.float32, time_major = False)
+
+			"""
 			context_attn_concat = tf.concat(1, [C_P, context])
 			context_attn_concat = tf.reshape(context_attn_concat, [-1, hidden_size * 2])
 
@@ -105,6 +133,7 @@ class BasicAffinityEncoder(Encoder):
 
 				context_attn = tf.matmul(context_attn_concat, W) + b
 				context_attn = tf.reshape(context_attn, [-1, c_max_length, hidden_size])
+			"""
 
 			return tf.nn.dropout(context_attn, 1.0 - dropout)
 			#return context_attn

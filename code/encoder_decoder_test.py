@@ -11,6 +11,7 @@ c_len = 200
 q_len = 30
 embed_size = 100
 batch_size = 21
+dropout = 0.15
 
 cp = tf.placeholder(tf.float32, [None, c_len, embed_size])
 qp = tf.placeholder(tf.float32, [None, q_len, embed_size])
@@ -18,6 +19,7 @@ qp = tf.placeholder(tf.float32, [None, q_len, embed_size])
 dataset = {}
 dataset['contexts'] = cp
 dataset['questions'] = qp
+dataset['dropout'] = dropout
 
 encoded = encoder.encode(dataset)
 start_pred, end_pred = decoder.decode(encoded)
