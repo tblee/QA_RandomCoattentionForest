@@ -466,7 +466,7 @@ class QASystem(object):
                 self.evaluate_answer(session, val_dataset, log = True)
 
                 if save_parameters:
-                    save_path = self.saver.save(session, pjoin(train_dir, "model.ckpt"))
+                    save_path = self.saver.save(session, pjoin(train_dir, "model" + str(int(time.time())) + ".ckpt"))
                     logging.info("** Saved parameters to {}".format(save_path))
 
 
