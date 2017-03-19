@@ -83,6 +83,7 @@ class BasicAffinityEncoder(Encoder):
 
 			## dropout
 			context = tf.nn.dropout(context, 1.0 - dropout)
+			question = tf.nn.dropout(question, 1.0 - dropout)
 
 			## capture context and question interaction
 			Z = batch_matmul(context, tf.transpose(question, [0, 2, 1]))
@@ -105,8 +106,8 @@ class BasicAffinityEncoder(Encoder):
 				context_attn = tf.matmul(context_attn_concat, W) + b
 				context_attn = tf.reshape(context_attn, [-1, c_max_length, hidden_size])
 
-			#return tf.nn.dropout(context_attn, 1.0 - dropout)
-			return context_attn
+			return tf.nn.dropout(context_attn, 1.0 - dropout)
+			#return context_attn
 
 class BasicLSTMClassifyDecoder(Decoder):
 	def __init__(self, config):
