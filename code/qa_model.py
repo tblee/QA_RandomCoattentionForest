@@ -148,7 +148,17 @@ class QASystem(object):
 
     def setup_optimization(self):
         with vs.variable_scope("optimization"):
-            self.opt = get_optimizer(self.config.optimizer)(self.config.learning_rate).minimize(self.loss) 
+            optimizer = get_optimizer(self.config.optimizer)(self.config.learning_rate)
+            self.gradients = optimizer.compute_gradients(self.loss)
+            """
+            self.output_gradients = []
+            for grad, name in self.gradients:
+                if grad is None:
+                    self.output_gradients.append((tf.constant(0.0), name))
+                else:
+                    self.output_gradients.append((grad, name))
+            """
+            self.opt = optimizer.apply_gradients(self.gradients)
 
     def setup_embeddings(self):
         """
@@ -358,7 +368,7 @@ class QASystem(object):
 
         return f1, em
 
-    def train(self, session, dataset, train_dir):
+    def train(self, session, dataset, train_dir, save_parameters = True):
         """
         Implement main training loop
 
@@ -449,14 +459,15 @@ class QASystem(object):
             logging.info("======== Validation took {} (sec) loss is: {}".format(toc - tic, valid_loss))
 
             eval_freq = self.config.eval_freq
-            if epoch > 1 and epoch % eval_freq == (eval_freq - 1):
+            if epoch % eval_freq == (eval_freq - 1):
                 logging.info("==== Evaluating training set ====")
                 self.evaluate_answer(session, dataset, log = True)
                 logging.info("==== Evaluating validation set ====")
                 self.evaluate_answer(session, val_dataset, log = True)
 
-                save_path = self.saver.save(session, pjoin(train_dir, "model.ckpt"))
-                logging.info("** Saved parameters to {}".format(save_path))
+                if save_parameters:
+                    save_path = self.saver.save(session, pjoin(train_dir, "model.ckpt"))
+                    logging.info("** Saved parameters to {}".format(save_path))
 
 
 

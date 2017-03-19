@@ -39,7 +39,7 @@ tf.app.flags.DEFINE_integer("subsample", None, "For testing purpose, subsample a
 tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context paragraph to this length.")
 tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
 tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
-
+tf.app.flags.DEFINE_boolean("save_parameters", True, "Whether to save model parameters or not.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -135,6 +135,7 @@ def main(_):
         train_val = "val",
         sample_size = FLAGS.subsample)
 
+
     ## === pack data to feed into model ===
     dataset = {}
     dataset['contexts'] = np.asarray(train_context_ids)
@@ -173,7 +174,7 @@ def main(_):
         initialize_model(sess, qa, load_train_dir)
 
         save_train_dir = get_normalized_train_dir(FLAGS.train_dir)
-        qa.train(sess, dataset, save_train_dir)
+        qa.train(sess, dataset, save_train_dir, FLAGS.save_parameters)
 
         #qa.evaluate_answer(sess, dataset, vocab, FLAGS.evaluate, log=True)
     

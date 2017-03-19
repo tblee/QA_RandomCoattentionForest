@@ -81,6 +81,9 @@ class BasicAffinityEncoder(Encoder):
 				q_lstm = tf.nn.rnn_cell.LSTMCell(hidden_size)
 				question, _ = tf.nn.dynamic_rnn(q_lstm, question_input, dtype = tf.float32, time_major = False)
 
+			## dropout
+			context = tf.nn.dropout(context, 1.0 - dropout)
+
 			## capture context and question interaction
 			Z = batch_matmul(context, tf.transpose(question, [0, 2, 1]))
 			A = tf.nn.softmax(Z, dim = -1)
@@ -102,7 +105,8 @@ class BasicAffinityEncoder(Encoder):
 				context_attn = tf.matmul(context_attn_concat, W) + b
 				context_attn = tf.reshape(context_attn, [-1, c_max_length, hidden_size])
 
-			return tf.nn.dropout(context_attn, 1.0 - dropout)
+			#return tf.nn.dropout(context_attn, 1.0 - dropout)
+			return context_attn
 
 class BasicLSTMClassifyDecoder(Decoder):
 	def __init__(self, config):
