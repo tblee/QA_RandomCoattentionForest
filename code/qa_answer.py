@@ -264,7 +264,7 @@ def main(_):
     initial_config['c_max_length'] = FLAGS.context_max_length
     initial_config['q_max_length'] = FLAGS.question_max_length
     initial_config['eval_freq'] = FLAGS.eval_freq
-    initial_config['decay_steps'] = FLAGS.decay_steps
+    initial_config['decay_rate'] = FLAGS.decay_rate
 
     config = Config(initial_config)
 
