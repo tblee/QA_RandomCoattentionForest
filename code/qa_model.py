@@ -35,7 +35,7 @@ class Config(object):
         self.c_max_length = initial_config['c_max_length']
         self.q_max_length = initial_config['q_max_length']
         self.eval_freq = initial_config['eval_freq']
-        self.decay_steps = initial_config['decay_steps']
+        self.decay_rate = initial_config['decay_rate']
 
 
 def get_optimizer(opt):
@@ -467,7 +467,7 @@ class QASystem(object):
             logging.info("====================== Epoch {} took {} (sec) with training loss: {}, validation loss: {}, exit learning_rate: {}".format(epoch + 1, toc - tic, loss, valid_loss, self.config.learning_rate))
 
             ## learning rate exponential decay
-            self.config.learning_rate *= 0.9
+            self.config.learning_rate *= self.config.decay_rate
 
 
             eval_freq = self.config.eval_freq

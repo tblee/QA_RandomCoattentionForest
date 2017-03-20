@@ -49,7 +49,7 @@ tf.app.flags.DEFINE_integer("subsample", None, "For testing purpose, subsample a
 tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context paragraph to this length.")
 tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
 tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
-tf.app.flags.DEFINE_integer("decay_steps", 500, "Learning rate decay steps.")
+tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
 
 
 def initialize_model(session, model, train_dir):
@@ -155,7 +155,7 @@ def generate_answers(sess, model, input_dataset, rev_vocab):
 
     ## === extract model prediction in batches to prevent system overload ===
     input_size = len(uuids)
-    batch_size = FLAGS.batch_size * 10 ## use a larger batch size than training
+    batch_size = FLAGS.batch_size
     n_batches = int(input_size / batch_size) + 1
     a_s, a_e = np.asarray([], dtype = np.int32), np.asarray([], dtype = np.int32)
     for batch_id in xrange(n_batches):
