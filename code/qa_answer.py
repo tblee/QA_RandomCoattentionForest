@@ -30,7 +30,7 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
-tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("batch_size", 1024, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 0, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
@@ -50,6 +50,7 @@ tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context para
 tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
 tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
 tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
+tf.app.flags.DEFINE_float("train_rate", 0.75, "The portion of training data seen in each epoch.")
 
 
 def initialize_model(session, model, train_dir):
@@ -265,6 +266,8 @@ def main(_):
     initial_config['q_max_length'] = FLAGS.question_max_length
     initial_config['eval_freq'] = FLAGS.eval_freq
     initial_config['decay_rate'] = FLAGS.decay_rate
+    initial_config['train_rate'] = FLAGS.train_rate
+
 
     config = Config(initial_config)
 

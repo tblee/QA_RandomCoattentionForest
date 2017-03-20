@@ -36,6 +36,7 @@ class Config(object):
         self.q_max_length = initial_config['q_max_length']
         self.eval_freq = initial_config['eval_freq']
         self.decay_rate = initial_config['decay_rate']
+        self.train_rate = initial_config['train_rate']
 
 
 def get_optimizer(opt):
@@ -82,6 +83,11 @@ class QASystem(object):
         self.dropout_placeholder = tf.placeholder(tf.float32,
             shape = [],
             name = "dropout")
+        """
+        self.context_mask_placeholder = tf.placeholder(tf.bool,
+            shape = [None, self.config.c_max_length],
+            name = "context_mask")
+        """
 
 
         # ==== assemble pieces ====
@@ -110,6 +116,10 @@ class QASystem(object):
         
         if input_end_labels is not None:
             feed_dict[self.end_label_placeholder] = input_end_labels
+        """
+        if input_context_masks is not None:
+            feed_dict[self.context_mask_placeholder] = input_context_masks
+        """
 
         if input_dropout is not None:
             feed_dict[self.dropout_placeholder] = input_dropout
@@ -139,6 +149,15 @@ class QASystem(object):
         Set up your loss computation here
         :return:
         """
+        """
+        ## === apply masks to loss ===
+        self.converted_mask = 1.0 - tf.cast(self.context_mask_placeholder, 'float') * (-1e30)
+        self.masked_start = tf.add(
+            self.start_preds, self.converted_mask, name = "exp_mask_start")
+        self.masked_end = tf.add(
+            self.end_preds, self.converted_mask, name = "exp_mask_end")
+        """
+
         with vs.variable_scope("loss_start"):
             loss_s = tf.reduce_mean(
                 tf.nn.sparse_softmax_cross_entropy_with_logits(self.start_preds, self.start_label_placeholder))
@@ -194,6 +213,7 @@ class QASystem(object):
         questions = dataset['questions']
         start_labels = dataset['start_labels']
         end_labels = dataset['end_labels']
+        #context_masks = dataset['context_masks']
         input_feed = self.create_feed_dict(
             input_contexts = contexts,
             input_questions = questions,
@@ -220,6 +240,7 @@ class QASystem(object):
         questions = dataset['questions']
         start_labels = dataset['start_labels']
         end_labels = dataset['end_labels']
+        #context_masks = dataset['context_masks']
         input_feed = self.create_feed_dict(
             input_contexts = contexts,
             input_questions = questions,
@@ -286,10 +307,11 @@ class QASystem(object):
         question_ids = val_dataset['questions']
         start_labels = val_dataset['start_labels']
         end_labels = val_dataset['end_labels']
+        #context_masks = val_dataset['context_masks']
 
         ## create batches to calculate validation loss to prevent flooded the model
         ## since we are not training parameters, take a larger batch size
-        batch_size = self.config.batch_size * 10
+        batch_size = self.config.batch_size
         input_size = len(start_labels)
         n_batches = int(input_size / batch_size) + 1
         data_batches = []
@@ -301,6 +323,7 @@ class QASystem(object):
             d['questions'] = question_ids[id_h : id_t]
             d['start_labels'] = start_labels[id_h : id_t]
             d['end_labels'] = end_labels[id_h : id_t]
+            #d['context_masks'] = context_masks[id_h : id_t]
             data_batches.append(d)
 
         valid_cost = 0.
@@ -418,12 +441,14 @@ class QASystem(object):
         val_dataset['end_labels'] = dataset['val_end_labels']
         val_dataset['original_contexts'] = dataset['val_original_contexts']
         val_dataset['answers'] = dataset['val_answers']
+        #val_dataset['context_masks'] = dataset['val_context_masks']
 
         ## create training batch with one training dictionary per batch
         context_ids = dataset['contexts']
         question_ids = dataset['questions']
         start_labels = dataset['start_labels']
         end_labels = dataset['end_labels']
+        #context_masks = dataset['context_masks']
         #train_dataset['original_contexts'] = dataset['original_contexts']
         #train_dataset['answers'] = dataset['answers']
 
@@ -439,6 +464,7 @@ class QASystem(object):
             d['questions'] = question_ids[id_h : id_t]
             d['start_labels'] = start_labels[id_h : id_t]
             d['end_labels'] = end_labels[id_h : id_t]
+            #d['context_masks'] = context_masks[id_h : id_t]
             data_batches.append(d)
         logging.info("Training with {} batches with batch size: {}".format(n_batches, batch_size))
 
@@ -453,13 +479,16 @@ class QASystem(object):
             tic = time.time()
             loss = 0.
             ## randomize batch training order
-            batch_order = sorted(np.random.choice(range(n_batches), size = n_batches, replace = False))
+            ## only a portion of training samples were feeded in each epoch
+            batch_order = sorted(np.random.choice(range(n_batches), size = int(n_batches * self.config.train_rate), replace = False))
+            trained_size = 0
             for batch_id in batch_order:
                 data_batch = data_batches[batch_id]
                 n_samples_in_batch = len(data_batch['start_labels'])
                 _, batch_loss = self.optimize(session, data_batch)
                 loss += batch_loss * n_samples_in_batch
-            loss /= input_size
+                trained_size += n_samples_in_batch
+            loss /= trained_size
             
             ## evaluate validation loss
             valid_loss = self.validate(session, val_dataset)

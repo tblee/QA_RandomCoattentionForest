@@ -41,6 +41,7 @@ tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to 
 tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
 tf.app.flags.DEFINE_boolean("save_parameters", True, "Whether to save model parameters or not.")
 tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
+tf.app.flags.DEFINE_float("train_rate", 0.75, "The portion of training data seen in each epoch.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -116,6 +117,7 @@ def main(_):
     initial_config['q_max_length'] = FLAGS.question_max_length
     initial_config['eval_freq'] = FLAGS.eval_freq
     initial_config['decay_rate'] = FLAGS.decay_rate
+    initial_config['train_rate'] = FLAGS.train_rate
 
     config = Config(initial_config)
 
@@ -146,6 +148,7 @@ def main(_):
     dataset['end_labels'] = np.asarray(train_end_ids)
     dataset['original_contexts'] = train_contexts
     dataset['answers'] = train_answers
+    #dataset['context_masks'] = np.asarray(train_context_masks)
 
     dataset['val_contexts'] = np.asarray(val_context_ids)
     dataset['val_questions'] = np.asarray(val_question_ids)
@@ -153,6 +156,7 @@ def main(_):
     dataset['val_end_labels'] = np.asarray(val_end_ids)
     dataset['val_original_contexts'] = val_contexts
     dataset['val_answers'] = val_answers
+    #dataset['val_context_masks'] = np.asarray(val_context_masks)
 
     encoder = BasicAffinityEncoder(config)
     decoder = BasicLSTMClassifyDecoder(config)
