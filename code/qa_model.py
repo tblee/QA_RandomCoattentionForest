@@ -149,13 +149,16 @@ class QASystem(object):
 
     def setup_optimization(self):
         with vs.variable_scope("optimization"):
-
+            """
             self.global_step = tf.Variable(0, trainable = False)
             self.learning_rate = tf.train.exponential_decay(
                 self.config.learning_rate, self.global_step, self.config.decay_steps, 0.9)
+            """
 
+            self.learning_rate = self.config.learning_rate
             self.optimizer = get_optimizer(self.config.optimizer)(self.learning_rate)
-            self.opt = self.optimizer.minimize(self.loss, global_step = self.global_step)
+            self.opt = self.optimizer.minimize(self.loss)
+            #self.opt = self.optimizer.minimize(self.loss, global_step = self.global_step)
             
             """
             self.gradients = optimizer.compute_gradients(self.loss)
@@ -201,7 +204,7 @@ class QASystem(object):
         # fill in this feed_dictionary like:
         # input_feed['train_x'] = train_x
 
-        output_feed = [self.opt, self.loss, self.learning_rate]
+        output_feed = [self.opt, self.loss]
 
         outputs = session.run(output_feed, input_feed)
 
@@ -454,14 +457,18 @@ class QASystem(object):
             for batch_id in batch_order:
                 data_batch = data_batches[batch_id]
                 n_samples_in_batch = len(data_batch['start_labels'])
-                _, batch_loss, lr = self.optimize(session, data_batch)
+                _, batch_loss = self.optimize(session, data_batch)
                 loss += batch_loss * n_samples_in_batch
             loss /= input_size
             
             ## evaluate validation loss
             valid_loss = self.validate(session, val_dataset)
             toc = time.time()
-            logging.info("====================== Epoch {} took {} (sec) with training loss: {}, validation loss: {}, exit learning_rate: {}".format(epoch + 1, toc - tic, loss, valid_loss, lr))
+            logging.info("====================== Epoch {} took {} (sec) with training loss: {}, validation loss: {}, exit learning_rate: {}".format(epoch + 1, toc - tic, loss, valid_loss, self.config.learning_rate))
+
+            ## learning rate exponential decay
+            self.config.learning_rate *= 0.9
+
 
             eval_freq = self.config.eval_freq
             if epoch % eval_freq == (eval_freq - 1):

@@ -143,6 +143,7 @@ class BasicLSTMClassifyDecoder(Decoder):
 			start_preds = tf.matmul(encoded, W_start)
 			start_preds = tf.reshape(start_preds, [-1, c_max_length])
 
+			"""
 			W_s_mem = tf.get_variable("W_start_mem",
 				dtype = tf.float32,
 				shape = [c_max_length, hidden_size],
@@ -156,6 +157,7 @@ class BasicLSTMClassifyDecoder(Decoder):
 			start_state_out = tf.matmul(start_preds, W_s_out)
 
 			start_state = tf.nn.rnn_cell.LSTMStateTuple(start_state_mem, start_state_out)
+			"""
 
 		encoded = tf.reshape(encoded, [-1, c_max_length, hidden_size])
 
@@ -163,7 +165,6 @@ class BasicLSTMClassifyDecoder(Decoder):
 			with vs.variable_scope("endDecoderLSTM"):
 				c_lstm = tf.nn.rnn_cell.LSTMCell(hidden_size)
 				encoded_e, _ = tf.nn.dynamic_rnn(c_lstm, encoded,
-					initial_state = start_state,
 					dtype = tf.float32, time_major = False)
 
 			W_end = tf.get_variable("W_end_decoder",
