@@ -49,6 +49,7 @@ tf.app.flags.DEFINE_integer("subsample", None, "For testing purpose, subsample a
 tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context paragraph to this length.")
 tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
 tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
+tf.app.flags.DEFINE_integer("decay_steps", 500, "Learning rate decay steps.")
 
 
 def initialize_model(session, model, train_dir):
@@ -152,16 +153,34 @@ def generate_answers(sess, model, input_dataset, rev_vocab):
     context_data = map(lambda s: pad_and_trim_sentence_with_mask(s, FLAGS.context_max_length)[0], context_data)
     question_data = map(lambda s: pad_and_trim_sentence_with_mask(s, FLAGS.question_max_length)[0], question_data)
 
+    ## === extract model prediction in batches to prevent system overload ===
+    input_size = len(uuids)
+    batch_size = FLAGS.batch_size * 10 ## use a larger batch size than training
+    n_batches = int(input_size / batch_size) + 1
+    a_s, a_e = np.asarray([], dtype = np.int32), np.asarray([], dtype = np.int32)
+    for batch_id in xrange(n_batches):
+        logging.info("Processing batch {}/{}...".format(batch_id + 1, n_batches))
+        id_h = batch_id * batch_size
+        id_t = (batch_id + 1) * batch_size
+        data_batch = {}
+        data_batch['contexts'] = np.asarray( context_data[id_h : id_t] )
+        data_batch['questions'] = np.asarray( question_data[id_h : id_t] )
+        batch_a_s, batch_a_e = model.answer(sess, data_batch)
+        a_s = np.concatenate((a_s, batch_a_s))
+        a_e = np.concatenate((a_e, batch_a_e))
+
+    """
     dataset = {}
     dataset['contexts'] = np.asarray(context_data)
     dataset['questions'] = np.asarray(question_data)
+    """
 
     ## === obtain predicted answers from model ===
     rev_dict = {}
     for idx, word in enumerate(rev_vocab):
         rev_dict[idx] = word
 
-    a_s, a_e = model.answer(sess, dataset)
+    #a_s, a_e = model.answer(sess, dataset)
 
     answers = {}
     for start, end, context, uuid in zip(a_s, a_e, context_data, uuids):
@@ -245,6 +264,7 @@ def main(_):
     initial_config['c_max_length'] = FLAGS.context_max_length
     initial_config['q_max_length'] = FLAGS.question_max_length
     initial_config['eval_freq'] = FLAGS.eval_freq
+    initial_config['decay_steps'] = FLAGS.decay_steps
 
     config = Config(initial_config)
 
