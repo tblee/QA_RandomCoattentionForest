@@ -51,7 +51,7 @@ tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to 
 tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
 tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
 tf.app.flags.DEFINE_float("train_rate", 0.75, "The portion of training data seen in each epoch.")
-tf.app.flags.DEFINE_integer("npairs", 1, "Number of encoder-decoder pairs to ensemble.")
+tf.app.flags.DEFINE_integer("npairs", 3, "Number of encoder-decoder pairs to ensemble.")
 
 
 def initialize_model(session, model, train_dir):

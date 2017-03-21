@@ -42,7 +42,7 @@ tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we 
 tf.app.flags.DEFINE_boolean("save_parameters", True, "Whether to save model parameters or not.")
 tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
 tf.app.flags.DEFINE_float("train_rate", 0.75, "The portion of training data seen in each epoch.")
-tf.app.flags.DEFINE_integer("npairs", 1, "Number of encoder-decoder pairs to ensemble.")
+tf.app.flags.DEFINE_integer("npairs", 3, "Number of encoder-decoder pairs to ensemble.")
 
 FLAGS = tf.app.flags.FLAGS
 
