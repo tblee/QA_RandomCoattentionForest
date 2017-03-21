@@ -30,7 +30,7 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
-tf.app.flags.DEFINE_integer("batch_size", 1024, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("batch_size", 256, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 0, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
@@ -51,6 +51,7 @@ tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to 
 tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we evaluate the model once.")
 tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
 tf.app.flags.DEFINE_float("train_rate", 0.75, "The portion of training data seen in each epoch.")
+tf.app.flags.DEFINE_integer("npairs", 1, "Number of encoder-decoder pairs to ensemble.")
 
 
 def initialize_model(session, model, train_dir):
@@ -267,14 +268,20 @@ def main(_):
     initial_config['eval_freq'] = FLAGS.eval_freq
     initial_config['decay_rate'] = FLAGS.decay_rate
     initial_config['train_rate'] = FLAGS.train_rate
+    initial_config['npairs'] = FLAGS.npairs
 
 
     config = Config(initial_config)
 
-    encoder = BasicAffinityEncoder(config)
-    decoder = BasicLSTMClassifyDecoder(config)
+    encoders, decoders = [], []
+    for idx in xrange(FLAGS.npairs):
+        encoders.append(BasicAffinityEncoder(config))
+        decoders.append(BasicLSTMClassifyDecoder(config))
 
-    qa = QASystem(encoder, decoder, config)
+    #encoder = BasicAffinityEncoder(config)
+    #decoder = BasicLSTMClassifyDecoder(config)
+
+    qa = QASystem(encoders, decoders, config)
 
     with tf.Session() as sess:
         train_dir = get_normalized_train_dir(FLAGS.train_dir)
