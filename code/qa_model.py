@@ -95,12 +95,13 @@ class QASystem(object):
             self.setup_embeddings()
             self.setup_system()
             self.setup_loss()
+            self.setup_optimization()
 
         # ==== set up training/updating procedure ====
-        self.setup_embeddings()
-        self.setup_system()
-        self.setup_loss()
-        self.setup_optimization()
+        #self.setup_embeddings()
+        #self.setup_system()
+        #self.setup_loss()
+        #self.setup_optimization()
 
         self.saver = tf.train.Saver()
 
