@@ -476,7 +476,6 @@ class QASystem(object):
         logging.info("Number of params: %d (retreival took %f secs)" % (num_params, toc - tic))
 
         ## ==== training process ====
-        prev_valid_loss = 6.0
         for epoch in xrange(self.config.epochs):
             tic = time.time()
             loss = 0.
@@ -510,10 +509,8 @@ class QASystem(object):
 
                 ## for specific training purpose
                 if save_parameters:
-                    if valid_loss < prev_valid_loss:
-                        save_path = self.saver.save(session, pjoin(train_dir, "model" + str(int(time.time())) + ".ckpt"))
-                        logging.info("** Saved parameters to {}".format(save_path))
-                        prev_valid_loss = valid_loss
+                    save_path = self.saver.save(session, pjoin(train_dir, "model" + str(int(time.time())) + ".ckpt"))
+                    logging.info("** Saved parameters to {}".format(save_path))
 
 
 
