@@ -37,6 +37,7 @@ class Config(object):
         self.eval_freq = initial_config['eval_freq']
         self.decay_rate = initial_config['decay_rate']
         self.train_rate = initial_config['train_rate']
+        self.npairs = initial_config['npairs']
 
 
 def get_optimizer(opt):
@@ -50,7 +51,7 @@ def get_optimizer(opt):
 
 
 class QASystem(object):
-    def __init__(self, encoder, decoder, config, *args):
+    def __init__(self, encoders, decoders, config, *args):
         """
         Initializes your System
 
@@ -64,8 +65,8 @@ class QASystem(object):
             self.config.data_dir,
             self.config.embedding_size)
 
-        self.encoder = encoder
-        self.decoder = decoder
+        self.encoders = encoders
+        self.decoders = decoders
 
         # ==== set up placeholder tokens ========
         self.context_placeholder = tf.placeholder(tf.int32,
@@ -141,9 +142,13 @@ class QASystem(object):
         dataset_encoder['contexts'] = self.context_embeddings
         dataset_encoder['questions'] = self.question_embeddings
         dataset_encoder['dropout'] = self.dropout_placeholder
-        self.encoded = self.encoder.encode(dataset_encoder)
-        self.start_preds, self.end_preds = self.decoder.decode(self.encoded)
 
+        self.start_preds, self.end_preds = [], []
+        for idx in xrange(self.config.npairs):
+            with vs.variable_scope("setpup{}".format(idx)):
+                start_pred, end_pred = self.decoders[idx].decode(self.encoders[idx].encode(dataset_encoder))
+                self.start_preds.append(start_pred)
+                self.end_preds.append(end_pred)
 
     def setup_loss(self):
         """
@@ -159,13 +164,16 @@ class QASystem(object):
             self.end_preds, self.converted_mask, name = "exp_mask_end")
         """
 
-        with vs.variable_scope("loss_start"):
-            loss_s = tf.reduce_mean(
-                tf.nn.sparse_softmax_cross_entropy_with_logits(self.start_preds, self.start_label_placeholder))
-        with vs.variable_scope("loss_end"):
-            loss_e = tf.reduce_mean(
-                tf.nn.sparse_softmax_cross_entropy_with_logits(self.end_preds, self.end_label_placeholder))
-        self.loss = loss_s + loss_e
+        self.losses = []
+        for idx in xrange(self.config.npairs):
+            with vs.variable_scope("setupLoss{}".format(idx)):
+                with vs.variable_scope("loss_start"):
+                    loss_s = tf.reduce_mean(
+                        tf.nn.sparse_softmax_cross_entropy_with_logits(self.start_preds[idx], self.start_label_placeholder))
+                with vs.variable_scope("loss_end"):
+                    loss_e = tf.reduce_mean(
+                        tf.nn.sparse_softmax_cross_entropy_with_logits(self.end_preds[idx], self.end_label_placeholder))
+                self.losses.append(loss_s + loss_e)
 
     def setup_optimization(self):
         with vs.variable_scope("optimization"):
@@ -177,7 +185,10 @@ class QASystem(object):
 
             self.learning_rate = self.config.learning_rate
             self.optimizer = get_optimizer(self.config.optimizer)(self.learning_rate)
-            self.opt = self.optimizer.minimize(self.loss)
+
+            self.opts = []
+            for idx in xrange(self.config.npairs):
+                self.opts.append(self.optimizer.minimize(self.losses[idx]))
             #self.opt = self.optimizer.minimize(self.loss, global_step = self.global_step)
             
             """
@@ -225,7 +236,7 @@ class QASystem(object):
         # fill in this feed_dictionary like:
         # input_feed['train_x'] = train_x
 
-        output_feed = [self.opt, self.loss]
+        output_feed = self.losses + self.opts
 
         outputs = session.run(output_feed, input_feed)
 
@@ -251,9 +262,10 @@ class QASystem(object):
         # fill in this feed_dictionary like:
         # input_feed['valid_x'] = valid_x
 
-        output_feed = self.loss
+        output_feed = self.losses
 
         outputs = session.run(output_feed, input_feed)
+        outputs = np.mean(outputs)
 
         return outputs
 
@@ -272,7 +284,7 @@ class QASystem(object):
         # fill in this feed_dictionary like:
         # input_feed['test_x'] = test_x
 
-        output_feed = [self.start_preds, self.end_preds]
+        output_feed = self.start_preds + self.end_preds
 
         outputs = session.run(output_feed, input_feed)
 
@@ -284,7 +296,12 @@ class QASystem(object):
         a_s: starting positions, with shape = [batch_size]
         a_e: ending positions, with shape = [batch_size]
         """
-        start_preds, end_preds = self.decode(session, dataset)
+        predictions = self.decode(session, dataset)
+        start_preds = predictions[: self.config.npairs]
+        end_preds = predictions[self.config.npairs : ]
+
+        start_preds = np.sum(start_preds, axis = 0)
+        end_preds = np.sum(end_preds, axis = 0)
 
         a_s = np.argmax(start_preds, axis=1)
         a_e = np.argmax(end_preds, axis=1)
@@ -486,7 +503,8 @@ class QASystem(object):
             for batch_id in batch_order:
                 data_batch = data_batches[batch_id]
                 n_samples_in_batch = len(data_batch['start_labels'])
-                _, batch_loss = self.optimize(session, data_batch)
+                output = self.optimize(session, data_batch)
+                batch_loss = np.mean(output[:self.config.npairs])
                 loss += batch_loss * n_samples_in_batch
                 trained_size += n_samples_in_batch
             loss /= trained_size

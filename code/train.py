@@ -42,6 +42,7 @@ tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we 
 tf.app.flags.DEFINE_boolean("save_parameters", True, "Whether to save model parameters or not.")
 tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
 tf.app.flags.DEFINE_float("train_rate", 0.75, "The portion of training data seen in each epoch.")
+tf.app.flags.DEFINE_integer("npairs", 1, "Number of encoder-decoder pairs to ensemble.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -118,6 +119,7 @@ def main(_):
     initial_config['eval_freq'] = FLAGS.eval_freq
     initial_config['decay_rate'] = FLAGS.decay_rate
     initial_config['train_rate'] = FLAGS.train_rate
+    initial_config['npairs'] = FLAGS.npairs
 
     config = Config(initial_config)
 
@@ -158,13 +160,15 @@ def main(_):
     dataset['val_answers'] = val_answers
     #dataset['val_context_masks'] = np.asarray(val_context_masks)
 
-    encoder = BasicAffinityEncoder(config)
-    decoder = BasicLSTMClassifyDecoder(config)
+    encoders, decoders = [], []
+    for idx in xrange(FLAGS.npairs):
+        encoders.append(BasicAffinityEncoder(config))
+        decoders.append(BasicLSTMClassifyDecoder(config))
 
     #encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size)
     #decoder = Decoder(output_size=FLAGS.output_size)
 
-    qa = QASystem(encoder, decoder, config)
+    qa = QASystem(encoders, decoders, config)
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
