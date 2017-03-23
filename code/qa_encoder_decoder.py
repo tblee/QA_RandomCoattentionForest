@@ -1,5 +1,4 @@
 ## ==== Implementation of Encoders and Decoders ====
-
 import numpy as np
 import tensorflow as tf
 
@@ -8,7 +7,6 @@ from tensorflow.python.ops.gen_math_ops import _batch_mat_mul as batch_matmul
 
 from qa_model import Config
 
-
 class Encoder(object):
     def __init__(self, size, vocab_dim):
         self.size = size
@@ -16,22 +14,9 @@ class Encoder(object):
 
     def encode(self, inputs, masks, encoder_state_input):
         """
-        In a generalized encode function, you pass in your inputs,
-        masks, and an initial
-        hidden state input into this function.
-
-        :param inputs: Symbolic representations of your input
-        :param masks: this is to make sure tf.nn.dynamic_rnn doesn't iterate
-                      through masked steps
-        :param encoder_state_input: (Optional) pass this as initial hidden state
-                                    to tf.nn.dynamic_rnn to build conditional representations
-        :return: an encoded representation of your input.
-                 It can be context-level representation, word-level representation,
-                 or both.
+        Basic encode function skeleton, not used.
         """
-
         return
-
 
 class Decoder(object):
     def __init__(self, output_size):
@@ -39,17 +24,8 @@ class Decoder(object):
 
     def decode(self, knowledge_rep):
         """
-        takes in a knowledge representation
-        and output a probability estimation over
-        all paragraph tokens on which token should be
-        the start of the answer span, and which should be
-        the end of the answer span.
-
-        :param knowledge_rep: it is a representation of the paragraph and question,
-                              decided by how you choose to implement the encoder
-        :return:
+        Basic decode function skeleton, not used
         """
-
         return
 
 class BasicAffinityEncoder(Encoder):
@@ -57,16 +33,15 @@ class BasicAffinityEncoder(Encoder):
 		self.config = config
 
 	def encode(self, dataset):
-		## use a dictionary to represent all inpus
-		## contexts: word embeddings of context paragraph, shape = [None, c_max_length, state_size]
-		## questions: word embeddings of questions, shape = [None, q_max_length, state_size]
-		
+		"""
+		use a dictionary to represent all inpus
+
+		:param contexts: word embeddings of context paragraph, shape = [None, c_max_length, state_size]
+		:param questions: word embeddings of questions, shape = [None, q_max_length, state_size]
+		"""
 		hidden_size = self.config.state_size
 		c_max_length = self.config.c_max_length
 		q_max_length = self.config.q_max_length
-		#hidden_size = 128
-		#c_max_length = 200
-		#q_max_length = 30
 
 		with vs.variable_scope("BasicAffinityEncoder"):
 
@@ -97,7 +72,6 @@ class BasicAffinityEncoder(Encoder):
 				question = tf.tanh( tf.matmul(question, W_q) + b_q )
 				question = tf.reshape(question, [-1, q_max_length, hidden_size])
 
-
 			## dropout
 			context = tf.nn.dropout(context, 1.0 - dropout)
 			question = tf.nn.dropout(question, 1.0 - dropout)
@@ -106,7 +80,6 @@ class BasicAffinityEncoder(Encoder):
 			Z = batch_matmul(context, tf.transpose(question, [0, 2, 1]))
 			A_Q = tf.nn.softmax(Z, dim = -1)
 			A_P = tf.nn.softmax(Z, dim = 1)
-
 
 			C_Q = batch_matmul(tf.transpose(A_Q, [0, 2, 1]), context)
 			C_P = batch_matmul(A_P, tf.concat(2, [question, C_Q]))
@@ -117,20 +90,19 @@ class BasicAffinityEncoder(Encoder):
 				out_lstm = tf.nn.rnn_cell.LSTMCell(hidden_size)
 				context_attn, _ = tf.nn.dynamic_rnn(out_lstm, context_question, dtype = tf.float32, time_major = False)
 
+			## dropout
 			return tf.nn.dropout(context_attn, 1.0 - dropout)
-			#return context_attn
 
 class BasicLSTMClassifyDecoder(Decoder):
 	def __init__(self, config):
 		self.config = config
 
 	def decode(self, encoded):
-		## encoded: encoded information with shape = [None, c_max_length, state_size]
-
+		"""
+		:param encoded: encoded information with shape = [None, c_max_length, state_size]
+		"""
 		hidden_size = self.config.state_size
 		c_max_length = self.config.c_max_length
-		#hidden_size = 128
-		#c_max_length = 200
 
 		encoded = tf.reshape(encoded, [-1, hidden_size])
 
@@ -142,22 +114,6 @@ class BasicLSTMClassifyDecoder(Decoder):
 
 			start_preds = tf.matmul(encoded, W_start)
 			start_preds = tf.reshape(start_preds, [-1, c_max_length])
-
-			"""
-			W_s_mem = tf.get_variable("W_start_mem",
-				dtype = tf.float32,
-				shape = [c_max_length, hidden_size],
-				initializer = tf.contrib.layers.xavier_initializer())
-			W_s_out = tf.get_variable("W_start_out",
-				dtype = tf.float32,
-				shape = [c_max_length, hidden_size],
-				initializer = tf.contrib.layers.xavier_initializer())
-
-			start_state_mem = tf.matmul(start_preds, W_s_mem)
-			start_state_out = tf.matmul(start_preds, W_s_out)
-
-			start_state = tf.nn.rnn_cell.LSTMStateTuple(start_state_mem, start_state_out)
-			"""
 
 		encoded = tf.reshape(encoded, [-1, c_max_length, hidden_size])
 
@@ -178,8 +134,3 @@ class BasicLSTMClassifyDecoder(Decoder):
 			end_preds = tf.reshape(end_preds, [-1, c_max_length])
 
 		return start_preds, end_preds
-
-
-
-
-

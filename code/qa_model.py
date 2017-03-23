@@ -20,17 +20,13 @@ logging.basicConfig(level=logging.INFO)
 class Config(object):
     def __init__(self, initial_config):
         self.learning_rate = initial_config['learning_rate']
-        self.max_gradient_norm = initial_config['max_gradient_norm']
         self.dropout = initial_config['dropout']
         self.batch_size = initial_config['batch_size']
         self.epochs = initial_config['epochs']
         self.state_size = initial_config['state_size']
-        self.output_size = initial_config['output_size']
         self.embedding_size = initial_config['embedding_size']
         self.data_dir = initial_config['data_dir']
         self.optimizer = initial_config['optimizer']
-        self.print_every = initial_config['print_every']
-        self.keep = initial_config["keep"]
         self.embed_path = initial_config["embed_path"]
         self.c_max_length = initial_config['c_max_length']
         self.q_max_length = initial_config['q_max_length']
@@ -55,9 +51,9 @@ class QASystem(object):
         """
         Initializes your System
 
-        :param encoder: an encoder that you constructed in train.py
-        :param decoder: a decoder that you constructed in train.py
-        :param args: pass in more arguments as needed
+        :param encoders: a list of encoders constructed in train.py
+        :param decoders: a list of decoders constructed in train.py
+        :param config: Config object containing all configurations to the model 
         """
         # ==== set up basic stuff ====
         self.config = config
@@ -84,12 +80,6 @@ class QASystem(object):
         self.dropout_placeholder = tf.placeholder(tf.float32,
             shape = [],
             name = "dropout")
-        """
-        self.context_mask_placeholder = tf.placeholder(tf.bool,
-            shape = [None, self.config.c_max_length],
-            name = "context_mask")
-        """
-
 
         # ==== assemble pieces ====
         with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
@@ -97,12 +87,6 @@ class QASystem(object):
             self.setup_system()
             self.setup_loss()
             self.setup_optimization()
-
-        # ==== set up training/updating procedure ====
-        #self.setup_embeddings()
-        #self.setup_system()
-        #self.setup_loss()
-        #self.setup_optimization()
 
         self.saver = tf.train.Saver()
 
@@ -118,10 +102,6 @@ class QASystem(object):
         
         if input_end_labels is not None:
             feed_dict[self.end_label_placeholder] = input_end_labels
-        """
-        if input_context_masks is not None:
-            feed_dict[self.context_mask_placeholder] = input_context_masks
-        """
 
         if input_dropout is not None:
             feed_dict[self.dropout_placeholder] = input_dropout
@@ -132,12 +112,9 @@ class QASystem(object):
 
     def setup_system(self):
         """
-        After your modularized implementation of encoder and decoder
-        you should call various functions inside encoder, decoder here
-        to assemble your reading comprehension system!
-        :return:
+        Connects the encoders and decoders in the system. Each encoder-decoder pair receives the
+        same input.
         """
-        #raise NotImplementedError("Connect all parts of your system here!")
         dataset_encoder = {}
         dataset_encoder['contexts'] = self.context_embeddings
         dataset_encoder['questions'] = self.question_embeddings
@@ -152,18 +129,8 @@ class QASystem(object):
 
     def setup_loss(self):
         """
-        Set up your loss computation here
-        :return:
+        Set loss computation. Losses from different encoder-decoder pairs are collected in a list
         """
-        """
-        ## === apply masks to loss ===
-        self.converted_mask = 1.0 - tf.cast(self.context_mask_placeholder, 'float') * (-1e30)
-        self.masked_start = tf.add(
-            self.start_preds, self.converted_mask, name = "exp_mask_start")
-        self.masked_end = tf.add(
-            self.end_preds, self.converted_mask, name = "exp_mask_end")
-        """
-
         self.losses = []
         for idx in xrange(self.config.npairs):
             with vs.variable_scope("setupLoss{}".format(idx)):
@@ -176,12 +143,10 @@ class QASystem(object):
                 self.losses.append(loss_s + loss_e)
 
     def setup_optimization(self):
+        """
+        Set optimization operations. Each encoder-decoder pair is individually optimized.
+        """
         with vs.variable_scope("optimization"):
-            """
-            self.global_step = tf.Variable(0, trainable = False)
-            self.learning_rate = tf.train.exponential_decay(
-                self.config.learning_rate, self.global_step, self.config.decay_steps, 0.9)
-            """
 
             self.learning_rate = self.config.learning_rate
             self.optimizer = get_optimizer(self.config.optimizer)(self.learning_rate)
@@ -189,23 +154,10 @@ class QASystem(object):
             self.opts = []
             for idx in xrange(self.config.npairs):
                 self.opts.append(self.optimizer.minimize(self.losses[idx]))
-            #self.opt = self.optimizer.minimize(self.loss, global_step = self.global_step)
-            
-            """
-            self.gradients = optimizer.compute_gradients(self.loss)
-            self.output_gradients = []
-            for grad, name in self.gradients:
-                if grad is None:
-                    self.output_gradients.append((tf.constant(0.0), name))
-                else:
-                    self.output_gradients.append((grad, name))
-            self.opt = optimizer.apply_gradients(self.gradients)
-            """
 
     def setup_embeddings(self):
         """
         Loads distributed word representations based on placeholder tokens
-        :return:
         """
         with vs.variable_scope("embeddings"):
             ## we don't train word embeddings
@@ -217,15 +169,14 @@ class QASystem(object):
 
     def optimize(self, session, dataset):
         """
-        Takes in actual data to optimize your model
-        This method is equivalent to a step() function
-        :return:
+        Takes in actual data and perform an optimizatio step. Each encoder-decoder pair
+        is trained in one optimize step.
         """
         contexts = dataset['contexts']
         questions = dataset['questions']
         start_labels = dataset['start_labels']
         end_labels = dataset['end_labels']
-        #context_masks = dataset['context_masks']
+
         input_feed = self.create_feed_dict(
             input_contexts = contexts,
             input_questions = questions,
@@ -233,34 +184,24 @@ class QASystem(object):
             input_end_labels = end_labels,
             input_dropout = self.config.dropout)
 
-        # fill in this feed_dictionary like:
-        # input_feed['train_x'] = train_x
-
         output_feed = self.losses + self.opts
-
         outputs = session.run(output_feed, input_feed)
 
         return outputs
 
     def test(self, session, dataset):
         """
-        in here you should compute a cost for your validation set
-        and tune your hyperparameters according to the validation set performance
-        :return:
+        Test model performance my computing loss with gien input
         """
         contexts = dataset['contexts']
         questions = dataset['questions']
         start_labels = dataset['start_labels']
         end_labels = dataset['end_labels']
-        #context_masks = dataset['context_masks']
         input_feed = self.create_feed_dict(
             input_contexts = contexts,
             input_questions = questions,
             input_start_labels = start_labels,
             input_end_labels = end_labels)
-
-        # fill in this feed_dictionary like:
-        # input_feed['valid_x'] = valid_x
 
         output_feed = self.losses
 
@@ -271,18 +212,14 @@ class QASystem(object):
 
     def decode(self, session, dataset):
         """
-        Returns the probability distribution over different positions in the paragraph
-        so that other methods like self.answer() will be able to work properly
-        :return:
+        Produce predictions for answer starting point and ending poitn's
+        probability distributions given actual input.
         """
         contexts = dataset['contexts']
         questions = dataset['questions']
         input_feed = self.create_feed_dict(
             input_contexts = contexts,
             input_questions = questions)
-
-        # fill in this feed_dictionary like:
-        # input_feed['test_x'] = test_x
 
         output_feed = self.start_preds + self.end_preds
 
@@ -292,9 +229,10 @@ class QASystem(object):
 
     def answer(self, session, dataset):
         """
+        Given actual input, produce predictions for answer's starting and ending positions.
         :return:
-        a_s: starting positions, with shape = [batch_size]
-        a_e: ending positions, with shape = [batch_size]
+        a_s: starting positions as an numpy array, with shape = [batch_size]
+        a_e: ending positions as an numpy array, with shape = [batch_size]
         """
         predictions = self.decode(session, dataset)
         start_preds = predictions[: self.config.npairs]
@@ -311,24 +249,19 @@ class QASystem(object):
     def validate(self, sess, val_dataset):
         """
         Iterate through the validation dataset and determine what
-        the validation cost is.
+        the validation loss is.
 
         This method calls self.test() which explicitly calculates validation cost.
 
-        How you implement this function is dependent on how you design
-        your data iteration function
-
         :return:
+        valid_cost: the calculated loss for the given validation set.
         """
-
         context_ids = val_dataset['contexts']
         question_ids = val_dataset['questions']
         start_labels = val_dataset['start_labels']
         end_labels = val_dataset['end_labels']
-        #context_masks = val_dataset['context_masks']
 
-        ## create batches to calculate validation loss to prevent flooded the model
-        ## since we are not training parameters, take a larger batch size
+        ## create batches to calculate validation loss to prevent OOM.
         batch_size = self.config.batch_size
         input_size = len(start_labels)
         n_batches = int(input_size / batch_size) + 1
@@ -341,7 +274,6 @@ class QASystem(object):
             d['questions'] = question_ids[id_h : id_t]
             d['start_labels'] = start_labels[id_h : id_t]
             d['end_labels'] = end_labels[id_h : id_t]
-            #d['context_masks'] = context_masks[id_h : id_t]
             data_batches.append(d)
 
         valid_cost = 0.
@@ -354,25 +286,25 @@ class QASystem(object):
 
         return valid_cost
 
-    def evaluate_answer(self, session, dataset, sample=100, log=False):
+    def evaluate_answer(self, session, dataset, sample = 100, log = False):
         """
-        Evaluate the model's performance using the harmonic mean of F1 and Exact Match (EM)
+        Evaluate the model's performance the mean of F1 and Exact Match (EM)
         with the set of true answer labels
 
-        This step actually takes quite some time. So we can only sample 100 examples
-        from either training or testing set.
+        Only a sample of input data is taken for the purpose of evaluation.
 
         :param session: session should always be centrally managed in train.py
-        :param dataset: a representation of our data, in some implementations, you can
-                        pass in multiple components (arguments) of one dataset to this function
+        :param dataset: a representation of our data
         :param sample: how many examples in dataset we look at
         :param log: whether we print to std out stream
         :return:
+        f1: average F1 score over "sample" number of samples over the input dataset
+        f1: average EM score over "sample" number of samples over the input dataset
         """
         f1 = 0.
         em = 0.
 
-        ## === take sample ===
+        ## === take samples ===
         context_ids = dataset['contexts']
         question_ids = dataset['questions']
         original_contexts = dataset['original_contexts']
@@ -400,7 +332,6 @@ class QASystem(object):
         sampled_dataset['contexts'] = s_context_ids
         sampled_dataset['questions'] = s_question_ids
 
-
         ## === get starting and ending positions ===
         tic = time.time()
         a_s, a_e = self.answer(session, sampled_dataset)
@@ -422,33 +353,16 @@ class QASystem(object):
 
     def train(self, session, dataset, train_dir, save_parameters = True):
         """
-        Implement main training loop
+        Main training loop
 
-        TIPS:
-        You should also implement learning rate annealing (look into tf.train.exponential_decay)
-        Considering the long time to train, you should save your model per epoch.
-
-        More ambitious appoarch can include implement early stopping, or reload
-        previous models if they have higher performance than the current one
-
-        As suggested in the document, you should evaluate your training progress by
-        printing out information every fixed number of iterations.
-
-        We recommend you evaluate your model performance on F1 and EM instead of just
-        looking at the cost.
+        Training is done in batches. Note that batch size is crutial in training performance.
+        A large batch size boosts training efficiency and also allows optimizers to perform their full capacity.
+        Choose a batch size that balances training efficiency and hardware capability.
 
         :param session: it should be passed in from train.py
-        :param dataset: a representation of our data, in some implementations, you can
-                        pass in multiple components (arguments) of one dataset to this function
+        :param dataset: a representation of input data
         :param train_dir: path to the directory where you should save the model checkpoint
-        :return:
         """
-
-        # some free code to print out number of parameters in your model
-        # it's always good to check!
-        # you will also want to save your model parameters in train_dir
-        # so that you can use your trained model to make predictions, or
-        # even continue training
 
         ## ===== Both training and validation sets are passed into train function ====
         ## process dataset
@@ -459,16 +373,12 @@ class QASystem(object):
         val_dataset['end_labels'] = dataset['val_end_labels']
         val_dataset['original_contexts'] = dataset['val_original_contexts']
         val_dataset['answers'] = dataset['val_answers']
-        #val_dataset['context_masks'] = dataset['val_context_masks']
 
         ## create training batch with one training dictionary per batch
         context_ids = dataset['contexts']
         question_ids = dataset['questions']
         start_labels = dataset['start_labels']
         end_labels = dataset['end_labels']
-        #context_masks = dataset['context_masks']
-        #train_dataset['original_contexts'] = dataset['original_contexts']
-        #train_dataset['answers'] = dataset['answers']
 
         batch_size = self.config.batch_size
         input_size = len(start_labels)
@@ -482,7 +392,6 @@ class QASystem(object):
             d['questions'] = question_ids[id_h : id_t]
             d['start_labels'] = start_labels[id_h : id_t]
             d['end_labels'] = end_labels[id_h : id_t]
-            #d['context_masks'] = context_masks[id_h : id_t]
             data_batches.append(d)
         logging.info("Training with {} batches with batch size: {}".format(n_batches, batch_size))
 
@@ -517,7 +426,7 @@ class QASystem(object):
             ## learning rate exponential decay
             self.config.learning_rate *= self.config.decay_rate
 
-
+            ## evaluate model performance
             eval_freq = self.config.eval_freq
             if epoch % eval_freq == (eval_freq - 1):
                 logging.info("==== Evaluating training set ====")
@@ -525,7 +434,7 @@ class QASystem(object):
                 logging.info("==== Evaluating validation set ====")
                 self.evaluate_answer(session, val_dataset, log = True)
 
-                ## for specific training purpose
+                ## save model parameters
                 if save_parameters:
                     save_path = self.saver.save(session, pjoin(train_dir, "model" + str(int(time.time())) + ".ckpt"))
                     logging.info("** Saved parameters to {}".format(save_path))

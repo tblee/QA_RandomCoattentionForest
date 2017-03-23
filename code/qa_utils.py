@@ -1,10 +1,7 @@
 ## ==== Utility function to help process data ====
-
 import numpy as np
 from os.path import join as pjoin
-
 from qa_data import PAD_ID
-
 
 def load_glove(data_dir, glove_dim = 100):
 	glove_dir = pjoin(data_dir, "glove.trimmed.{}.npz".format(glove_dim))
@@ -13,9 +10,7 @@ def load_glove(data_dir, glove_dim = 100):
 
 	return glove.astype(np.float32)
 
-
 def prepare_data(data_dir, c_max_length, q_max_length, train_val = "train", sample_size = None):
-	
 	## obtain directories
 	context_file_dir = pjoin(data_dir, "{}.context".format(train_val))
 	context_id_file_dir = pjoin(data_dir, "{}.ids.context".format(train_val))
@@ -70,8 +65,6 @@ def prepare_data(data_dir, c_max_length, q_max_length, train_val = "train", samp
 
 	return contexts, questions, context_ids, context_masks, question_ids, start_ids, end_ids, answers
 
-
-
 def pad_and_trim_sentence_with_mask(sentence, max_length):
 	## input sentence is an array of integers
 	mask = [True] * max_length
@@ -83,8 +76,3 @@ def pad_and_trim_sentence_with_mask(sentence, max_length):
 		n_sentence = n_sentence[: max_length]
 
 	return n_sentence, mask
-
-
-
-
-

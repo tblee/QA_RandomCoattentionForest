@@ -28,23 +28,18 @@ logging.basicConfig(level=logging.INFO)
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
-tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
 tf.app.flags.DEFINE_integer("batch_size", 256, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 0, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
-tf.app.flags.DEFINE_integer("output_size", 750, "The output size of your model.")
 tf.app.flags.DEFINE_string("optimizer", "adam", "adam / sgd")
-tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per print.")
-tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("train_dir", "train", "Training directory (default: ./train).")
 tf.app.flags.DEFINE_string("log_dir", "log", "Path to store log and flag files (default: ./log)")
 tf.app.flags.DEFINE_string("data_dir", "data/squad", "SQuAD directory (default ./data/squad)")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
 tf.app.flags.DEFINE_string("dev_path", "data/squad/dev-v1.1.json", "Path to the JSON dev set to evaluate against (default: ./data/squad/dev-v1.1.json)")
-
 tf.app.flags.DEFINE_integer("subsample", None, "For testing purpose, subsample a portion of data to feedinto model")
 tf.app.flags.DEFINE_integer("context_max_length", 200, "Trim or pad context paragraph to this length.")
 tf.app.flags.DEFINE_integer("question_max_length", 30, "Trim or pad question to this length.")
@@ -52,7 +47,6 @@ tf.app.flags.DEFINE_integer("eval_freq", 5, "For how many training epochs do we 
 tf.app.flags.DEFINE_float("decay_rate", 0.95, "Learning rate decay rate.")
 tf.app.flags.DEFINE_float("train_rate", 0.75, "The portion of training data seen in each epoch.")
 tf.app.flags.DEFINE_integer("npairs", 3, "Number of encoder-decoder pairs to ensemble.")
-
 
 def initialize_model(session, model, train_dir):
     ckpt = tf.train.get_checkpoint_state(train_dir)
@@ -66,7 +60,6 @@ def initialize_model(session, model, train_dir):
         logging.info('Num params: %d' % sum(v.get_shape().num_elements() for v in tf.trainable_variables()))
     return model
 
-
 def initialize_vocab(vocab_path):
     if tf.gfile.Exists(vocab_path):
         rev_vocab = []
@@ -77,7 +70,6 @@ def initialize_vocab(vocab_path):
         return vocab, rev_vocab
     else:
         raise ValueError("Vocabulary file %s not found.", vocab_path)
-
 
 def read_dataset(dataset, tier, vocab):
     """Reads the dataset, extracts context, question, answer,
@@ -114,7 +106,6 @@ def read_dataset(dataset, tier, vocab):
 
     return context_data, query_data, question_uuid_data
 
-
 def prepare_dev(prefix, dev_filename, vocab):
     # Don't check file size, since we could be using other datasets
     dev_dataset = maybe_download(squad_base_url, dev_filename, prefix)
@@ -123,7 +114,6 @@ def prepare_dev(prefix, dev_filename, vocab):
     context_data, question_data, question_uuid_data = read_dataset(dev_data, 'dev', vocab)
 
     return context_data, question_data, question_uuid_data
-
 
 def generate_answers(sess, model, input_dataset, rev_vocab):
     """
@@ -137,12 +127,11 @@ def generate_answers(sess, model, input_dataset, rev_vocab):
     evaluate.py will take the output JSON along with the original JSON file
     and output a F1 and EM
 
-    You must implement this function in order to submit to Leaderboard.
-
     :param sess: active TF session
     :param model: a built QASystem model
     :param rev_vocab: this is a list of vocabulary that maps index to actual words
     :return:
+    :answer : a dictionary which has answer[uuid] = predicted answer sentence (as a string)
     """
     ## === process input data ===
     context_data = input_dataset['contexts']
@@ -171,18 +160,10 @@ def generate_answers(sess, model, input_dataset, rev_vocab):
         a_s = np.concatenate((a_s, batch_a_s))
         a_e = np.concatenate((a_e, batch_a_e))
 
-    """
-    dataset = {}
-    dataset['contexts'] = np.asarray(context_data)
-    dataset['questions'] = np.asarray(question_data)
-    """
-
     ## === obtain predicted answers from model ===
     rev_dict = {}
     for idx, word in enumerate(rev_vocab):
         rev_dict[idx] = word
-
-    #a_s, a_e = model.answer(sess, dataset)
 
     answers = {}
     for start, end, context, uuid in zip(a_s, a_e, context_data, uuids):
@@ -198,7 +179,6 @@ def generate_answers(sess, model, input_dataset, rev_vocab):
 
     return answers
 
-
 def get_normalized_train_dir(train_dir):
     """
     Adds symlink to {train_dir} from /tmp/cs224n-squad-train to canonicalize the
@@ -213,7 +193,6 @@ def get_normalized_train_dir(train_dir):
         os.makedirs(train_dir)
     os.symlink(os.path.abspath(train_dir), global_train_dir)
     return global_train_dir
-
 
 def main(_):
 
@@ -231,8 +210,6 @@ def main(_):
         json.dump(FLAGS.__flags, fout)
 
     # ========= Load Dataset =========
-    # You can change this code to load dataset in your own way
-
     dev_dirname = os.path.dirname(os.path.abspath(FLAGS.dev_path))
     dev_filename = os.path.basename(FLAGS.dev_path)
     context_data, question_data, question_uuid_data = prepare_dev(dev_dirname, dev_filename, vocab)
@@ -241,28 +218,18 @@ def main(_):
     dataset['contexts'] = context_data
     dataset['questions'] = question_data
     dataset['uuids'] = question_uuid_data
-    #dataset = (context_data, question_data, question_uuid_data)
-
-    # ========= Model-specific =========
-    # You must change the following code to adjust to your model
 
     ## collect input arguments to construct config object
     initial_config = {}
     initial_config['learning_rate'] = FLAGS.learning_rate
-    initial_config['max_gradient_norm'] = FLAGS.max_gradient_norm
     initial_config['dropout'] = FLAGS.dropout
     initial_config['batch_size'] = FLAGS.batch_size
     initial_config['epochs'] = FLAGS.epochs
     initial_config['state_size'] = FLAGS.state_size
-    initial_config['output_size'] = FLAGS.output_size
     initial_config['embedding_size'] = FLAGS.embedding_size
     initial_config['data_dir'] = FLAGS.data_dir
-
     initial_config['optimizer'] = FLAGS.optimizer
-    initial_config['print_every'] = FLAGS.print_every
-    initial_config["keep"] = FLAGS.keep
     initial_config["embed_path"] = FLAGS.embed_path
-
     initial_config['c_max_length'] = FLAGS.context_max_length
     initial_config['q_max_length'] = FLAGS.question_max_length
     initial_config['eval_freq'] = FLAGS.eval_freq
@@ -270,16 +237,12 @@ def main(_):
     initial_config['train_rate'] = FLAGS.train_rate
     initial_config['npairs'] = FLAGS.npairs
 
-
     config = Config(initial_config)
 
     encoders, decoders = [], []
     for idx in xrange(FLAGS.npairs):
         encoders.append(BasicAffinityEncoder(config))
         decoders.append(BasicLSTMClassifyDecoder(config))
-
-    #encoder = BasicAffinityEncoder(config)
-    #decoder = BasicLSTMClassifyDecoder(config)
 
     qa = QASystem(encoders, decoders, config)
 
@@ -291,7 +254,6 @@ def main(_):
         # write to json file to root dir
         with io.open('dev-prediction.json', 'w', encoding='utf-8') as f:
             f.write(unicode(json.dumps(answers, ensure_ascii=False)))
-
 
 if __name__ == "__main__":
   tf.app.run()
